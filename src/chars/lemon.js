@@ -56,8 +56,17 @@ window.CO = window.CO || {};
       id: 'lemon', name: 'LEMON', portrait: 'portrait_lemon', scale: 1.0,
       title: 'Hate My Job', weapon: 'Heavy-Duty Stapler 9000',
       stats: { hp: 520, mp: 100, mpRegen: 3.5, speed: 285, dash: 760, jump: 680, w: 34 },
-      poses: { idle: 'idle', run: ['run01', 'run02', 'run03', 'run04', 'run05', 'run06', 'run07', 'run08', 'run09', 'run10', 'run11', 'run12'],
-        runStride: 13, runStart: 'run03', skid: 'run06', hurt: 'hurt', down: 'down', victory: 'victory',
+      poses: { idle: 'idle',
+        // v3: 24 real, distinct run frames (art, no tweens), phase-ordered; one frame per runStride px travelled
+        run: ['run01', 'run02', 'run03', 'run04', 'run05', 'run06', 'run07', 'run08', 'run09', 'run10', 'run11', 'run12',
+          'run13', 'run14', 'run15', 'run16', 'run17', 'run18', 'run19', 'run20', 'run21', 'run22', 'run23', 'run24'],
+        // v3.1: the 24 frames are a rig-drawn two-leg gait (tools/runrig.py). One cycle (2 steps) = 24 frames = ~200 world px
+        // (stance foot speed == ground speed, no sliding) -> ~2.85 steps/s at full speed. Starts on the passing pose (runOffset).
+        runStride: 8.3, runOffset: 4, jogUntil: 22,                  // jogUntil = ticks of running before skid/turn frames apply
+        walk: ['wk1', 'wk2', 'wk4', 'wk5', 'wk6', 'wk8'], walkStride: 15, walkBelow: 0.55, // analog stick below 55%
+        skid: ['sk1', 'sk2', 'sk3'], skidTicks: 12,                  // stop from a full run
+        turn: ['sk6', 'sk5'], turnTicks: 5,                          // reverse direction while running
+        hurt: 'hurt', down: 'down', victory: 'victory',
         rise: 'uppercut', fall: 'airslam', dash: 'dash', joy: 'runjoy' },
       moves: LEMON_MOVES, start: { light: 'l1', heavy: 'h1', air: 'air1', airHeavy: 'dive', dashLight: 'commute' },
       skills: LEMON_SKILLS,
