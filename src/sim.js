@@ -11,8 +11,8 @@
   class Sim {
     constructor(opts = {}) {
       this.rng = mulberry32(opts.seed || 1234);
-      this.mode = opts.mode || (opts.stage && opts.stage !== 'survival' ? 'story' : 'survival');
       this.stage = CO.STAGES[opts.stage || 'survival'];
+      this.mode = this.stage.len ? 'story' : 'survival';
       this.scroll = !!this.stage.len;   // story stages scroll left->right through connected areas
       if (this.scroll) {
         const S = this.stage; this.world = { w: S.len, h: S.h };
@@ -22,9 +22,9 @@
         if (cp >= 0) { this.enc = cp - 1; this.scrollMin = Math.max(0, S.encounters[cp].x - 1100); this.A.x0 = this.scrollMin + 40; this.A.x1 = this.scrollMin + 1240; }
       } else { this.world = this.stage.world; this.A = Object.assign({}, this.stage.arena); }
       this.surv = { wave: 0 }; this.score = opts.score || 0; this.hpMul = 1; this.dmgMul = 1;
-      this.clockRate = this.mode === 'survival' ? 20 : 7;
+      this.clockRate = this.mode === 'survival' ? 20 : 3;   // v4: story clock 3 game-sec per sec so 7 stages fit 5:59 -> ~7:50 PM
       this.players = []; this.enemies = []; this.projs = []; this.hazards = []; this.pickups = [];
-      this.boss = null; this.events = []; this.frame = 0; this.hitstop = 0; this.timeStop = 0; this.slowmo = 0;
+      this.boss = null; this.zones = []; this.cd = 0; this.events = []; this.frame = 0; this.hitstop = 0; this.timeStop = 0; this.slowmo = 0;
       this.nextId = 1; this.state = 'start'; this.st = 0; this.wave = -1; this.queue = []; this.spawnT = 0;
       this.checkpoint = opts.checkpoint || null; this.continues = opts.continues || 0;
       this.gameSec = opts.clock || this.stage.clock || (17 * 60 + 59) * 60; // story starts 5:59 PM
@@ -42,7 +42,7 @@
       const p = { id: this.nextId++, kind: 'player', slot, char: c, x: sx, y: sy, runDist: 0, runT: 0, stopT: 0,
         z: 0, vx: 0, vy: 0, vz: 0, face: 1, hp: s.hp, maxhp: s.hp, mp: s.mp * 0.6, maxmp: s.mp, ot: 0, combo: 0, comboT: 0, overtime: false,
         state: 'idle', st: 0, move: null, mt: 0, hitMap: null, buf: {}, iframes: 60, cds: c.skills.map(() => 0), buff: 0, airChain: 0,
-        charge: 0, alive: true, pose: c.poses.idle, rot: 0, flip: false, w: s.w, flash: 0, reviveT: 0, otReady: false };
+        charge: 0, slowT: 0, slowV: 0, blind: 0, castId: 0, airDashed: false, alive: true, pose: c.poses.idle, rot: 0, flip: false, w: s.w, flash: 0, reviveT: 0, otReady: false };
       this.players.push(p); return p;
     }
     alivePlayers() { return this.players.filter(p => p.alive); }
@@ -54,9 +54,10 @@
       if (this.state !== 'clear' && this.state !== 'failed') this.gameSec += this.clockRate * DT;
       this.players.forEach((p, i) => this.updatePlayer(p, intents[i] || CO.emptyIntent()));
       if (this.timeStop > 0) { this.timeStop--; } else {
+        this.updateAuras();
         for (const e of this.enemies) this.updateEnemy(e);
         if (this.boss) this.updateBoss(this.boss);
-        this.updateProjs(); this.updateHazards(); this.separate();
+        this.updateProjs(); this.updateHazards(); this.updateZones(); this.separate();
       }
       this.updatePickups();
       this.enemies = this.enemies.filter(e => !e.gone);
@@ -73,8 +74,11 @@
       p.mp = Math.min(p.maxmp, p.mp + S.mpRegen * DT);
       p.cds = p.cds.map(v => Math.max(0, v - DT));
       if (p.buff > 0) p.buff -= DT;
+      if (p.blind > 0) p.blind--;
+      if (p.slowT > 0) p.slowT--; else p.slowV = 0;
       if (p.comboT > 0 && --p.comboT <= 0) { if (p.overtime) this.ev({ t: 'overtime_end', p: p.id }); p.combo = 0; p.overtime = false; }
-      const aspd = p.buff > 0 ? 1.3 : 1, spd = S.speed * (p.buff > 0 ? 1.3 : 1);
+      const BM = c.buffMul || { aspd: 1.3, spd: 1.3, dmg: 1.1 };
+      const aspd = p.buff > 0 ? BM.aspd : 1, spd = S.speed * (p.buff > 0 ? BM.spd : 1) * (1 - (p.slowT > 0 ? p.slowV : 0));
       const take = a => { if (p.buf[a] > 0) { p.buf[a] = 0; return true; } return false; };
       const mx = it.mx, my = it.my;
       if (Math.abs(mx) > 0.25) p.wantFace = sign(mx); else p.wantFace = 0;
@@ -127,13 +131,15 @@
         p.pose = p.vz > 0 ? c.poses.rise : c.poses.fall; p.rot = p.vz > 0 ? 0 : 0.15; p.flip = false;
         if (take('light') && p.airChain < 6) this.startMove(p, c.start.air);
         else if (take('heavy')) this.startMove(p, c.start.airHeavy);
+        else if (c.passive && c.passive.airDash && !p.airDashed && take('dash')) { p.airDashed = true; this.startDash(p); p.vz = 0; }
       } else if (p.state === 'move') {
         this.runMove(p, aspd, take, tryGeneric, mx);
       } else if (p.state === 'dash') {
-        const k = p.st / 18; p.vx = p.face * S.dash * (1 - k * 0.6); p.vy = (my || 0) * S.speed * 0.4;
-        p.pose = c.poses.dash; p.rot = 0;
+        const DD = c.passive && c.passive.dashCd ? Math.round(18 * c.passive.dashCd) : 18;
+        const k = p.st / DD; p.vx = p.face * S.dash * (1 - k * 0.6); p.vy = (my || 0) * S.speed * 0.4;
+        p.pose = c.poses.dash; p.rot = 0; if (p.z > 0) p.vz = Math.max(p.vz, 0) * 0.5;
         if (p.st > 3 && take('light')) this.startMove(p, c.start.dashLight);
-        else if (p.st >= 18) { p.state = 'idle'; p.st = 0; }
+        else if (p.st >= DD) { p.state = p.z > 0 ? 'air' : 'idle'; p.st = 0; }
       } else if (p.state === 'skill') {
         this.runSkill(p, aspd);
       } else if (p.state === 'ult') {
@@ -146,7 +152,7 @@
         if (p.st >= 55 && p.z <= 0) { p.state = 'idle'; p.st = 0; p.iframes = 50; }
       }
       this.physics(p, (p.state === 'move' && p.move && p.move.air && p.mt < (p.move.active[1] || 0)) ? GRAV * 0.55 : GRAV);
-      if (p.z <= 0 && p.state === 'air') { p.state = 'idle'; p.st = 0; this.ev({ t: 'land', x: p.x, y: p.y }); }
+      if (p.z <= 0 && p.state === 'air') { p.state = 'idle'; p.st = 0; p.airDashed = false; this.ev({ t: 'land', x: p.x, y: p.y }); }
     }
 
     physics(o, g) {
@@ -222,7 +228,7 @@
         const finisher = m.every && f >= m.active[1] - m.every;
         let dmg = charged ? m.charge.dmg : m.dmg;
         this.damage(e, p, { dmg, kb: finisher && m.finalKb ? m.finalKb : m.kb, stun: m.stun, launch: m.launch, juggle: m.juggle,
-          knockdown: m.knockdown || charged, breaksGuard: m.breaksGuard || charged, stampText: charged ? 'FINAL DRAFT' : m.stampText, from: p.x, heavy: m.dmg >= 40 || charged });
+          knockdown: m.knockdown || charged, breaksGuard: m.breaksGuard || charged, stampText: charged ? (m.charge.name || 'FINAL DRAFT') : m.stampText, from: p.x, heavy: m.dmg >= 40 || charged });
         any = true;
       }
       if (any) this.hitstop = Math.max(this.hitstop, m.dmg >= 40 || charged ? 5 : 2);
@@ -231,7 +237,12 @@
     // generic damage from a player to an enemy/boss
     damage(e, p, o) {
       if (e.state === 'dead') return;
-      let dmg = o.dmg * (p && p.overtime ? 1.25 : 1) * (p && p.buff > 0 ? 1.1 : 1);
+      let dmg = o.dmg * (p && p.overtime ? 1.25 : 1) * (p && p.buff > 0 ? (p.char.buffMul ? p.char.buffMul.dmg : 1.1) : 1);
+      if (e.def.kbResist && e.kind === 'enemy') o = Object.assign({}, o, { kb: o.kb * (1 - e.def.kbResist) });
+      // v4 frontal blockers (WFH laptop 50%, Umbrella 70%): hit them from behind or with guard-breakers
+      if (e.def.block && e.kind === 'enemy' && !o.breaksGuard && e.state !== 'air' && e.state !== 'down' && e.z <= 0 && sign((p ? p.x : o.from) - e.x) === e.face) {
+        dmg *= 1 - e.def.block; if (this.frame - (e.blkT || -99) > 20) { e.blkT = this.frame; this.ev({ t: 'block', x: e.x, y: e.y, z: 100, msg: e.def.block >= 0.7 ? 'UMBRELLA' : 'LAPTOP' }); }
+      }
       const dir = sign(e.x - (o.from !== undefined ? o.from : (p ? p.x : e.x)));
       let fx = ['paper', 'star', 'slime', 'ink', 'coffee'][Math.floor(this.rng() * 5)];
       // HR Shield blocks frontal hits
@@ -246,6 +257,10 @@
       }
       if (e.kind === 'boss') {
         if (e.state === 'dizzy') dmg *= 1.5;
+        if (o.stagger && e.def.kit === 'landlord' && e.state !== 'dizzy' && e.lastCast !== o.castId) {   // 3 briefcase / drift casts stagger the Landlord
+          e.lastCast = o.castId; e.skillHits = (e.skillHits || 0) + 1;
+          if (e.skillHits >= 3) { e.skillHits = 0; e.state = 'dizzy'; e.st = 0; this.ev({ t: 'text', x: e.x, y: e.y, z: 260, msg: 'STAGGERED!', col: '#ffd34d' }); this.ev({ t: 'sfx', s: 'dizzy' }); }
+        }
         if (e.state === 'aura') { this.ev({ t: 'block', x: e.x, y: e.y, z: 200, msg: 'IMMUNE' }); return; }
         e.hp -= dmg; e.dmgTaken = (e.dmgTaken || 0) + dmg;
         if (e.def.scripted && e.hp <= e.maxhp * e.def.scripted) { e.hp = e.maxhp * e.def.scripted; this.startAura(e); } e.flash = 4; e.poise -= dmg;
@@ -283,12 +298,14 @@
       e.state = 'dead'; e.gone = true; this.stats.kos++;
       this.score += Math.round(e.def.score * (1 + Math.min(p ? p.combo : 0, 100) / 50));
       this.ev({ t: 'kill', x: e.x, y: e.y, z: e.z, type: e.type, score: e.def.score });
+      if (e.def.death === 'puddle') this.addZone({ kind: 'coffee', x: e.x, y: e.y, r: 110, T: 240, slow: 0.35 });
+      if (e.def.death === 'cart') this.addZone({ kind: 'cart', x: e.x, y: e.y, r: 62, T: 300, slow: 0.5 });
       const r = this.rng();
       if (r < 0.22) this.pickups.push({ id: this.nextId++, type: 'bean', x: e.x, y: e.y, t: 0 });
       else if (r < 0.32) this.pickups.push({ id: this.nextId++, type: 'donut', x: e.x, y: e.y, t: 0 });
     }
 
-    hurtPlayer(p, dmg, kb, from, knockdown) {
+    hurtPlayer(p, dmg, kb, from, knockdown, stunF) {
       if (!p.alive || p.iframes > 0 || p.state === 'ult' || p.state === 'dash' || p.state === 'down') return false;
       if (this.god) dmg = 0;
       p.hp -= dmg; this.stats.dmgTaken += dmg; p.flash = 6;
@@ -299,11 +316,17 @@
       this.ev({ t: 'phurt', p: p.id, x: p.x, y: p.y, z: p.z + 80, dmg });
       if (p.hp <= 0) { p.hp = 0; p.alive = false; p.state = 'ko'; p.vx = dir * 300; this.ev({ t: 'pko', p: p.id }); return true; }
       if (knockdown) { p.state = 'down'; p.st = 0; p.vx = dir * kb; p.vz = 300; }
-      else { p.state = 'hurt'; p.st = 0; p.stun = 18; p.vx = dir * kb; }
-      p.iframes = knockdown ? 0 : 20;
+      else { p.state = 'hurt'; p.st = 0; p.stun = stunF || 18; p.vx = dir * kb; }
+      p.iframes = knockdown ? 0 : (stunF ? Math.min(stunF, 30) : 20);
       return true;
     }
 
+    // HP loss without a flinch (smoke clouds etc.)
+    chip(p, dmg) {
+      if (!p.alive || this.god || p.state === 'ult') return;
+      p.hp -= dmg; this.stats.dmgTaken += dmg; this.ev({ t: 'chip', p: p.id, x: p.x, y: p.y, z: p.z + 100, dmg });
+      if (p.hp <= 0) { p.hp = 0; p.alive = false; p.state = 'ko'; this.ev({ t: 'pko', p: p.id }); }
+    }
     startDash(p) {
       p.state = 'dash'; p.st = 0; p.iframes = 13; if (p.wantFace) p.face = p.wantFace; p.move = null;
       this.ev({ t: 'dash', p: p.id, x: p.x, y: p.y, face: p.face }); return true;
@@ -311,7 +334,7 @@
 
     startSkill(p, i) {
       const sk = p.char.skills[i]; p.mp -= sk.cost; p.cds[i] = sk.cd;
-      p.state = 'skill'; p.skill = sk; p.st = 0; p.mt = 0; p.prevMt = -1; p.pose = sk.pose; p.rot = 0; p.flip = false;
+      p.castId = ++this.nextId; p.state = 'skill'; p.skill = sk; p.st = 0; p.mt = 0; p.prevMt = -1; p.pose = sk.pose; p.rot = 0; p.flip = false;
       if (p.wantFace) p.face = p.wantFace;
       this.ev({ t: 'skill', p: p.id, id: sk.id, name: sk.name, x: p.x, y: p.y });
       return true;
@@ -335,23 +358,50 @@
       }
       if (sk.id === 'briefcase' && f >= sk.case.at && pf < sk.case.at) {
         const C = sk.case;
-        this.projs.push({ id: this.nextId++, kind: 'case', owner: p, x: p.x + p.face * 60, y: p.y, z: 70, vx: p.face * C.speed, vy: 0, life: 200, t: 0, C, hitT: new Map() });
+        this.projs.push({ id: this.nextId++, kind: 'case', castId: p.castId, owner: p, x: p.x + p.face * 60, y: p.y, z: 70, vx: p.face * C.speed, vy: 0, life: 200, t: 0, C, hitT: new Map() });
         this.ev({ t: 'sfx', s: 'throw' });
       }
-      if (p.mt >= sk.total) { p.state = 'idle'; p.st = 0; }
+      if (sk.id === 'tuneup') {
+        p.rot = 0;
+        if (f >= 14 && pf < 14) {
+          p.hp = Math.min(p.maxhp, p.hp + sk.heal); p.buff = sk.buff; this.ev({ t: 'buff', p: p.id, x: p.x, y: p.y, wrench: true });
+          for (const o of this.players) if (o !== p && o.alive && Math.hypot(o.x - p.x, (o.y - p.y) * 1.6) <= sk.r) { o.hp = Math.min(o.maxhp, o.hp + sk.heal * sk.allyHeal); o.buff = sk.buff; this.ev({ t: 'buff', p: o.id, x: o.x, y: o.y, wrench: true }); }
+          this.ev({ t: 'sfx', s: 'wrench' });
+        }
+      }
+      if (sk.id === 'ebrake' && f >= sk.at && pf < sk.at) {
+        const C = sk.cone; this.ev({ t: 'cone', x: p.x, y: p.y, face: p.face, r: C.r, ry: C.ry, col: 0xffb347 }); this.ev({ t: 'sfx', s: 'brake' }); this.ev({ t: 'shake', a: 0.008, d: 160 });
+        for (const e of this.targets()) {
+          const dx = (e.x - p.x) * p.face; if (dx < -20 || dx > C.r || Math.abs(e.y - p.y) > C.ry) continue;
+          this.damage(e, p, { dmg: sk.dmg, kb: 60, stun: sk.stun, from: p.x, breaksGuard: true, stampText: 'HANDBRAKE!' });
+          if (e.kind === 'boss' && e.state !== 'dead') e.frozen = sk.bossStun;
+        }
+      }
+      if (sk.id === 'hairpin') {
+        const H = sk.slide, run = 25;
+        if (f >= H.from && f < H.from + run) {
+          p.vx = p.face * H.dist / (run / 60); p.vy *= 0.5; p.iframes = Math.max(p.iframes, 3); p.rot = -0.12 * p.face;
+          if ((f - H.from) % 3 === 0) this.addZone({ kind: 'skid', x: p.x, y: p.y, r: 46, T: 60, slow: 0.5, team: 'e' });
+          if ((f - H.from) % H.every === 0 && f !== Math.floor(pf)) {
+            this.ev({ t: 'drift', x: p.x, y: p.y, face: p.face });
+            for (const e of this.targets()) if (Math.abs(e.x - p.x) < H.rx + e.w && Math.abs(e.y - p.y) < H.ry && e.z < 120) this.damage(e, p, { dmg: H.dmg, kb: 120, stun: 22, from: p.x - p.face * 60, breaksGuard: true, stagger: true, castId: p.castId });
+          }
+        } else p.rot = 0;
+      }
+      if (p.mt >= sk.total) { p.state = 'idle'; p.st = 0; p.rot = 0; }
     }
 
     startUlt(p) {
       const u = p.char.ult; p.state = 'ult'; p.mt = 0; p.ot = 0; p.otReady = false; p.vx = p.vy = 0; p.move = null; this.stats.ults++;
       this.timeStop = u.total; p.pose = u.pose;
       const line = p.char.lines.ult[Math.floor(this.rng() * p.char.lines.ult.length)];
-      this.ev({ t: 'ult_start', p: p.id, line }); return true;
+      this.ev({ t: 'ult_start', p: p.id, line, char: p.char.id, face: p.face }); return true;
     }
     runUlt(p) {
       const u = p.char.ult; p.mt++; p.pose = u.pose; p.rot = 0;
       if (p.mt === u.at) {
-        for (const e of this.enemies) if (e.state !== 'dead') { this.damage(e, p, { dmg: u.dmg, kb: 300, launch: 700, from: p.x, heavy: true }); }
-        if (this.boss && this.boss.state !== 'dead' && this.boss.state !== 'intro') this.damage(this.boss, p, { dmg: u.bossDmg, kb: 0, from: p.x, heavy: true, stampText: 'CLOCKED OUT' });
+        for (const e of this.enemies) if (e.state !== 'dead') { this.damage(e, p, { dmg: u.dmg, kb: u.kb || 300, launch: u.launch || 700, from: p.x, heavy: true }); }
+        if (this.boss && this.boss.state !== 'dead' && this.boss.state !== 'intro') this.damage(this.boss, p, { dmg: u.bossDmg, kb: 0, from: p.x, heavy: true, stampText: u.stamp || 'CLOCKED OUT' });
         this.ev({ t: 'ult_hit', p: p.id }); this.ev({ t: 'shake', a: 0.02, d: 400 });
       }
       if (p.mt >= u.total) { p.state = 'idle'; p.st = 0; p.iframes = 30; }
@@ -399,18 +449,27 @@
         if (e.type === 'hr' && e.shieldDown > 0) { e.pose = d.frames.hurt; }
         if (!t) { e.vx *= 0.9; e.vy *= 0.9; }
         else {
-          const side = sign(e.x - t.x), tx = t.x + side * (d.ai === 'ranged' ? d.keep : at.range * 0.8), ty = t.y + e.slotY * (d.ai === 'ranged' ? 2 : 0.4);
+          const side = sign(e.x - t.x), tx = t.x + side * (d.ai === 'ranged' ? d.keep : (d.stand || at.range * 0.8)), ty = t.y + e.slotY * (d.ai === 'ranged' ? 2 : 0.4);
           const dx = tx - e.x, dy = ty - e.y, L = Math.hypot(dx, dy);
-          const sp = d.speed * (e.type === 'hr' && e.shieldDown > 0 ? 0.6 : 1);
+          const sp = d.speed * (e.type === 'hr' && e.shieldDown > 0 ? 0.6 : 1) * (e.auraT > 0 ? 1.25 : 1) * (e.slowT > 0 ? 0.5 : 1);
           if (L > 8) { e.vx = dx / L * sp; e.vy = dy / L * sp * 0.8; } else { e.vx *= 0.7; e.vy *= 0.7; e.pose = d.frames.walk; e.rot = 0; }
           e.face = sign(t.x - e.x);
           if (e.cd > 0) e.cd--;
-          const inR = d.ai === 'ranged' ? Math.abs(t.x - e.x) < at.range && Math.abs(t.y - e.y) < 90 : Math.abs(t.x - e.x) < at.range + 20 && Math.abs(t.y - e.y) < 34;
+          let inR = d.ai === 'ranged' ? Math.abs(t.x - e.x) < at.range && Math.abs(t.y - e.y) < 90 : Math.abs(t.x - e.x) < at.range + 20 && Math.abs(t.y - e.y) < 34;
+          if (at.kind === 'charge') inR = Math.abs(t.x - e.x) < at.range && Math.abs(t.x - e.x) > 140 && Math.abs(t.y - e.y) < 40;
+          else if (at.kind === 'ring') inR = Math.hypot(t.x - e.x, (t.y - e.y) * 1.6) < at.r + 24;
+          else if (at.kind === 'summon') inR = this.enemies.filter(q => q.parent === e.id && q.state !== 'dead').length < at.max && this.enemies.length < 12;
+          else if (at.kind === 'cloud') inR = Math.abs(t.x - e.x) < at.range && Math.abs(t.y - e.y) < 70;
           if (inR && e.cd <= 0 && this.attackers() < 2 + this.players.length) { e.state = 'windup'; e.st = 0; e.vx = e.vy = 0; this.ev({ t: 'tell', id: e.id }); }
         }
         if (--e.barkT <= 0) { e.barkT = this.r(500, 1400); if (this.rng() < 0.5) this.ev({ t: 'bark', x: e.x, y: e.y, z: 170, msg: d.barks[Math.floor(this.rng() * d.barks.length)] }); }
       } else if (e.state === 'windup') {
         e.pose = d.frames.walk; e.rot = -0.12 * e.face; e.vx *= 0.8; e.vy *= 0.8;
+        if (t && (at.kind === 'bolt' || at.kind === 'volley' || at.kind === 'boomerang' || at.kind === 'throw' || at.kind === 'cloud')) e.face = sign(t.x - e.x) || e.face;
+        if (at.kind === 'bolt' && t && e.st < at.windup - 12) e.aim = { x: t.x, y: t.y };   // laser sight tracks, then locks for the last 12 frames
+        if (at.kind === 'cone' && e.st === 1) this.ev({ t: 'cone', x: e.x, y: e.y, face: e.face, r: at.range, ry: at.ry, col: at.fx && at.fx.blind ? 0xffffff : at.fx && at.fx.stun ? 0xffe27a : at.fx && at.fx.slow ? 0x8fd0ff : 0x9ff0e0, tell: at.windup });
+        if (at.kind === 'ring' && e.st === 1) this.ev({ t: 'ringtell', x: e.x, y: e.y, r: at.r, T: at.windup });
+        if (at.kind === 'charge' && t) { e.face = sign(t.x - e.x) || e.face; if (e.st === 1) this.ev({ t: 'text', x: e.x, y: e.y, z: 170, msg: '!', col: '#ffd34d' }); }
         if (e.st >= at.windup) {
           e.state = 'attack'; e.st = 0; e.hitDone = false; if (at.lunge) e.vx = e.face * at.lunge; this.ev({ t: 'sfx', s: at.kind === 'shout' ? 'shout' : 'eswing' });
           if (at.kind === 'throw' && t) {   // lobbed paper ball, lands where the target is heading
@@ -420,16 +479,34 @@
           }
           if (at.kind === 'shout') { this.ev({ t: 'shout', x: e.x, y: e.y, face: e.face }); if (this.rng() < at.cc && this.enemies.length < 10) { this.spawnEnemy('intern'); this.ev({ t: 'text', x: e.x, y: e.y, z: 190, msg: '+1 CC\'d', col: '#9fd0ff', small: true }); } }
           if (at.kind === 'whip') this.ev({ t: 'whip', x: e.x, y: e.y, face: e.face, r: at.range });
+          this.enemyAttackStart(e, at, t);
         }
       } else if (e.state === 'attack') {
         e.pose = d.frames.atk; e.rot = 0.05 * e.face;
-        if (!at.lunge) e.vx *= 0.8; else e.vx *= 0.93;
-        if (!e.hitDone) for (const p of this.players) {
-          if (!p.alive) continue;
-          const cx = e.x + e.face * at.range * 0.6, dx = (p.x - cx) / (at.rx + p.w), dy = (p.y - e.y) / (at.ry + 12);
-          if (dx * dx + dy * dy <= 1 && p.z < 70) { if (this.hurtPlayer(p, at.dmg * this.dmgMul, at.kb, e.x, e.type === 'hr')) { e.hitDone = at.kind !== 'shout'; if (at.kind === 'whip') this.ev({ t: 'text', x: p.x, y: p.y, z: 150, msg: 'YOINK', col: '#9fffb0', small: true }); } }
+        if (at.kind === 'charge') {
+          e.rot = 0.12 * e.face; e.vx = e.face * at.speed * (e.auraT > 0 ? 1.2 : 1); e.vy = 0;
+          if (e.st % 5 === 0) this.ev({ t: 'dust', x: e.x - e.face * 30, y: e.y });
+          if (!e.hitDone) for (const p of this.players) if (p.alive && Math.abs(p.x - e.x) < at.rx * 0.55 + p.w && Math.abs(p.y - e.y) < at.ry + 12 && p.z < 70) {
+            if (this.hurtPlayer(p, this.edm(e, at.dmg), at.kb, e.x, false)) e.hitDone = true;
+          }
+          if (e.st > 6 && (e.x <= A.x0 + 1 || e.x >= A.x1 - 1)) { e.state = 'stun'; e.st = 0; e.stun = at.wallStun; e.vx = -e.face * 60; e.cd = at.cd; this.ev({ t: 'text', x: e.x, y: e.y, z: 170, msg: 'CRASH!', col: '#ffd34d' }); this.ev({ t: 'sfx', s: 'clang' }); this.ev({ t: 'shake', a: 0.006, d: 160 }); }
+          else if (e.st >= at.active) { if (at.selfStun) { e.state = 'stun'; e.st = 0; e.stun = at.selfStun; e.cd = at.cd; this.ev({ t: 'text', x: e.x, y: e.y, z: 170, msg: 'WOBBLE', col: '#ffd34d', small: true }); } else { e.state = 'recover'; e.st = 0; } }
+        } else {
+          if (!at.lunge) e.vx *= 0.8; else e.vx *= 0.93;
+          if (!e.hitDone) for (const p of this.players) {
+            if (!p.alive) continue;
+            const cx = e.x + e.face * at.range * 0.6, dx = (p.x - cx) / (at.rx + p.w), dy = (p.y - e.y) / (at.ry + 12);
+            if (dx * dx + dy * dy <= 1 && p.z < 70) {
+              const wall = at.wallBonus && (p.x < A.x0 + 70 || p.x > A.x1 - 70 || p.y < A.y0 + 20 || p.y > A.y1 - 20);
+              if (this.hurtPlayer(p, this.edm(e, at.dmg + (wall ? at.wallBonus : 0)), at.kb, e.x, e.type === 'hr', at.fx && at.fx.stun)) {
+                e.hitDone = at.kind !== 'shout'; if (at.kind === 'whip') this.ev({ t: 'text', x: p.x, y: p.y, z: 150, msg: 'YOINK', col: '#9fffb0', small: true });
+                if (wall) this.ev({ t: 'text', x: p.x, y: p.y, z: 150, msg: 'WALL SLAM', col: '#ffd34d', small: true });
+                this.applyFx(p, at.fx);
+              }
+            }
+          }
+          if (e.st >= at.active) { e.state = 'recover'; e.st = 0; }
         }
-        if (e.st >= at.active) { e.state = 'recover'; e.st = 0; }
       } else if (e.state === 'recover') {
         e.pose = d.frames.walk; e.rot = 0; e.vx *= 0.85; e.vy *= 0.85;
         if (e.st >= at.recover) { e.state = 'chase'; e.st = 0; e.cd = at.cd + this.r(0, 50); }
@@ -444,7 +521,79 @@
         if (e.st >= 55) { e.state = 'chase'; e.st = 0; e.rot = 0; e.cd = 40; }
       }
       if (e.state === 'air' && e.st === 0) e.st = 1;
+      if (e.slowT > 0) { e.slowT--; if (e.state !== 'attack') { e.vx *= 0.6; e.vy *= 0.6; } }
       this.physics(e, EGRAV);
+    }
+
+    edm(e, base) { return base * this.dmgMul * (e.auraT > 0 ? 1.2 : 1); }
+    applyFx(p, fx) {
+      if (!fx) return;
+      if (fx.blind) { p.blind = Math.max(p.blind, fx.blind); this.ev({ t: 'blind', p: p.id }); }
+      if (fx.slow) { p.slowT = fx.slow; p.slowV = 0.4; this.ev({ t: 'text', x: p.x, y: p.y, z: 160, msg: 'SLOWED', col: '#8fd0ff', small: true }); }
+    }
+    addZone(z) {
+      z.id = this.nextId++; z.t = 0; z.team = z.team || 'p'; z.acc = 0; this.zones.push(z);
+      if (this.zones.length > 16) this.zones.shift();
+      this.ev({ t: 'zone', kind: z.kind, x: z.x, y: z.y, r: z.r });
+      return z;
+    }
+    updateZones() {
+      for (const z of this.zones) {
+        z.t++;
+        if (z.team !== 'e') for (const p of this.players) {
+          if (!p.alive || p.z > 40) continue; const dx = (p.x - z.x) / z.r, dy = (p.y - z.y) / (z.r * 0.5);
+          if (dx * dx + dy * dy > 1) continue;
+          if (z.slow) { p.slowT = Math.max(p.slowT, 6); p.slowV = Math.max(p.slowV, z.slow); }
+          if (z.dps && z.t % 60 === 0) this.chip(p, z.dps);
+        }
+        if (z.team === 'e') for (const e of this.targets()) {
+          const dx = (e.x - z.x) / z.r, dy = (e.y - z.y) / (z.r * 0.6);
+          if (dx * dx + dy * dy <= 1 && e.kind === 'enemy') e.slowT = Math.max(e.slowT || 0, 8);
+        }
+      }
+      this.zones = this.zones.filter(z => z.t < z.T);
+    }
+    updateAuras() {
+      for (const e of this.enemies) if (e.auraT > 0) e.auraT--;
+      for (const sp of this.enemies) {
+        if (!sp.def.aura || sp.state === 'dead' || sp.state === 'enter') continue;
+        for (const e of this.enemies) if (e !== sp && e.state !== 'dead' && Math.hypot(e.x - sp.x, (e.y - sp.y) * 1.6) <= sp.def.aura) e.auraT = 8;
+        if (this.frame % 240 === sp.id % 240) this.ev({ t: 'aura', x: sp.x, y: sp.y, r: sp.def.aura });
+      }
+    }
+    enemyAttackStart(e, at, t) {
+      const k = at.kind;
+      if (at.text) this.ev({ t: 'text', x: e.x, y: e.y, z: 200, msg: at.text, col: '#ffd34d' });
+      if (k === 'bolt' && e.aim) {
+        const dx = e.aim.x - e.x, dy = (e.aim.y - e.y), a = Math.atan2(dy, dx || e.face), sx = 900;
+        this.projs.push({ id: this.nextId++, kind: 'note', tex: at.proj, bolt: true, ang: a, owner: e, x: e.x + e.face * 50, y: e.y, z: 100, vx: Math.cos(a) * sx, vy: Math.sin(a) * sx, life: 80, dmg: this.edm(e, at.dmg) });
+        e.hitDone = true; e.aim = null; this.ev({ t: 'sfx', s: 'laser' });
+      }
+      if (k === 'volley' && t) {
+        const base = Math.atan2((t.y - e.y) * 1.2, t.x - e.x);
+        for (let i = 0; i < at.n; i++) { const a = base + (i - (at.n - 1) / 2) * 0.22; this.projs.push({ id: this.nextId++, kind: 'note', tex: at.proj, ang: a, owner: e, x: e.x + e.face * 40, y: e.y, z: 100, vx: Math.cos(a) * 520, vy: Math.sin(a) * 520 * 0.7, life: 100, dmg: this.edm(e, at.dmg) }); }
+        e.hitDone = true; this.ev({ t: 'sfx', s: 'throw' });
+      }
+      if (k === 'boomerang' && t) {
+        const base = Math.atan2((t.y - e.y) * 1.0, t.x - e.x);
+        for (let i = 0; i < at.n; i++) { const a = base + (at.n > 1 ? (i - (at.n - 1) / 2) * 0.42 : 0); this.projs.push({ id: this.nextId++, kind: 'boom', tex: at.proj, owner: e, x: e.x + e.face * 40, y: e.y, z: 90, ax: Math.cos(a), ay: Math.sin(a) * 0.7, t: 0, out: 34, life: 260, dmg: this.edm(e, at.dmg), fx: at.fx, hit: new Set(), spin: 0 }); }
+        e.hitDone = true; this.ev({ t: 'sfx', s: 'throw' });
+      }
+      if (k === 'ring') {
+        e.hitDone = true; this.ev({ t: 'ringhit', x: e.x, y: e.y, r: at.r }); this.ev({ t: 'sfx', s: 'ring' }); this.ev({ t: 'shake', a: 0.006, d: 160 });
+        for (const p of this.players) if (p.alive && p.z < 60 && Math.hypot(p.x - e.x, (p.y - e.y) * 1.6) <= at.r + p.w) this.hurtPlayer(p, this.edm(e, at.dmg), at.kb, e.x, false);
+      }
+      if (k === 'summon') {
+        e.hitDone = true; this.ev({ t: 'sfx', s: 'ding' });
+        for (let i = 0; i < at.n; i++) { if (this.enemies.length >= 12) break; const c = this.spawnEnemy(at.spawn, e.x < (this.A.x0 + this.A.x1) / 2 ? 'l' : 'r'); c.parent = e.id; }
+        this.ev({ t: 'text', x: e.x, y: e.y, z: 200, msg: 'DING DING!', col: '#ffd34d' });
+      }
+      if (k === 'cloud') {
+        e.hitDone = true; this.addZone({ kind: 'smoke', x: e.x + e.face * 70, y: e.y + 10, r: at.r, T: at.T, dps: at.dmg }); this.ev({ t: 'sfx', s: 'puff' });
+      }
+      if (at.puddle) this.addZone({ kind: 'coffee', x: e.x + e.face * 80, y: e.y + 6, r: 80, T: 240, slow: 0.35 });
+      if (k === 'cone' && at.fx && at.fx.slick) this.addZone({ kind: 'soap', x: e.x + e.face * 130, y: e.y + 6, r: 110, T: 300, slow: 0.4 });
+      if (k === 'cone') this.ev({ t: 'sfx', s: at.fx && at.fx.blind ? 'flash' : 'whoosh' });
     }
 
     // ---------- boss ----------
@@ -458,7 +607,7 @@
     }
     startAura(b) {   // scripted, unwinnable lobby encounter: the CEO becomes immune and seals the exit
       if (b.state === 'aura' || b.state === 'done') return;
-      b.state = 'aura'; b.st = 0; b.vx = b.vy = 0; this.hazards.length = 0; this.projs = this.projs.filter(q => q.kind === 'staple' || q.kind === 'case');
+      b.state = 'aura'; b.st = 0; b.vx = b.vy = 0; this.hazards.length = 0; this.projs = this.projs.filter(q => q.kind === 'staple' || q.kind === 'case'); this.zones.length = 0;
       for (const e of this.enemies) { this.ev({ t: 'kill', x: e.x, y: e.y, z: e.z, type: e.type }); e.gone = true; }
       for (const p of this.players) p.iframes = 400;
       this.ev({ t: 'banner', msg: 'MONDAY AURA', sub: 'Your stapler does... nothing?!' }); this.ev({ t: 'sfx', s: 'boom' }); this.ev({ t: 'shake', a: 0.015, d: 500 });
@@ -466,7 +615,7 @@
 
     updateBoss(b) {
       const d = b.def, A = this.A; b.st++; if (b.flash > 0) b.flash--;
-      const t = this.nearestPlayer(b); const sp = d.speed * (b.phase === 2 ? 1.25 : 1);
+      const t = this.nearestPlayer(b); const sp = d.speed * (b.phase >= 2 ? 1.25 : 1);
       const say = m => this.ev({ t: 'bark', x: b.x, y: b.y, z: 330, msg: m, boss: true });
       if (b.state === 'intro') {
         b.pose = d.frames.idle; const L = b.from === 'l', tx = L ? A.x0 + 180 : A.x1 - 180;
@@ -483,9 +632,13 @@
         if (b.st >= 210) { b.state = 'done'; b.st = 0; }
         return;
       }
+      if (b.frozen > 0) { b.frozen--; b.pose = d.frames.hurt; b.vx *= 0.8; b.vy *= 0.8; b.rot = Math.sin(b.st * 0.5) * 0.04; this.physics(b, EGRAV); return; }
       b.fightT++;
       if (d.scripted && b.fightT > 2400) return this.startAura(b);   // never unwinnable-forever: the cutscene triggers regardless
-      if (b.phase === 1 && b.hp < b.maxhp * 0.5) { b.phase = 2; say(d.phase2); this.ev({ t: 'banner', msg: 'PHASE 2', sub: d.name + ': "' + d.phase2 + '"' }); }
+      if (d.kit === 'muzak') {
+        if (b.phase === 1 && b.hp < b.maxhp * 0.66) { b.phase = 2; say(d.phase2); this.ev({ t: 'banner', msg: 'PHASE 2', sub: d.name + ': "' + d.phase2 + '"' }); }
+        else if (b.phase === 2 && b.hp < b.maxhp * 0.33) { b.phase = 3; say(d.phase3); this.ev({ t: 'banner', msg: 'PHASE 3', sub: d.name + ': "' + d.phase3 + '"' }); this.ev({ t: 'shake', a: 0.01, d: 400 }); }
+      } else if (b.phase === 1 && b.hp < b.maxhp * 0.5) { b.phase = 2; say(d.phase2); this.ev({ t: 'banner', msg: 'PHASE 2', sub: d.name + ': "' + d.phase2 + '"' }); }
       if (b.summonCd > 0) b.summonCd--;
       if (b.state === 'idle') {
         b.pose = d.frames.idle; b.rot = Math.sin(b.st * 0.1) * 0.03;
@@ -497,31 +650,32 @@
             const dist = Math.abs(t.x - b.x) + Math.abs(t.y - b.y);
             const adds = this.enemies.length; const r = this.rng();
             let next;
-            if (dist < 260 && r < 0.55) next = 'sweep';
+            if (d.kit) next = this.kitPick(b, dist, adds);
+            else if (dist < 260 && r < 0.55) next = 'sweep';
             else if (b.summonCd <= 0 && adds < 3 && r < 0.75) next = 'summon';
             else next = this.rng() < 0.5 ? 'deadline' : 'notes';
-            if (next === b.last && next !== 'sweep') next = next === 'deadline' ? 'notes' : 'deadline';
+            if (!d.kit && next === b.last && next !== 'sweep') next = next === 'deadline' ? 'notes' : 'deadline';
             b.last = next; b.state = next; b.st = 0; b.vx = b.vy = 0;
             if (next === 'sweep') this.ev({ t: 'tell', id: b.id, boss: true });
             if (this.rng() < 0.45) say(d.barks[Math.floor(this.rng() * d.barks.length)]);
           }
         }
       } else if (b.state === 'sweep') {
-        const W = b.phase === 2 ? 30 : 40;
+        const W = b.phase >= 2 ? 30 : 40;
         b.pose = b.st < W ? d.frames.idle : d.frames.atk; b.rot = b.st < W ? -0.08 * b.face : 0.06 * b.face;
         if (b.st === W) { this.ev({ t: 'sfx', s: 'bossswing' }); this.ev({ t: 'swing', p: 0, x: b.x, y: b.y, z: 0, face: b.face, arc: [-80, 80], enemy: true, r: 190 }); }
         if (b.st >= W && b.st <= W + 8) for (const p of this.players) {
           if (!p.alive) continue; const cx = b.x + b.face * 110, dx = (p.x - cx) / 200, dy = (p.y - b.y) / 85;
           if (dx * dx + dy * dy <= 1 && p.z < 120) this.hurtPlayer(p, 34 * this.dmgMul, 420, b.x, true);
         }
-        if (b.st >= W + 45) { b.state = 'idle'; b.st = 0; b.cd = b.phase === 2 ? 35 : 55; }
+        if (b.st >= W + 45) { b.state = 'idle'; b.st = 0; b.cd = b.phase >= 2 ? 35 : 55; }
       } else if (b.state === 'deadline') {
         b.pose = d.frames.idle; b.rot = 0;
         if (b.st === 20 && t) {
-          const n = b.phase === 2 ? 5 : 3;
+          const n = b.phase >= 2 ? 5 : 3;
           for (let k = 0; k < n; k++) {
             const hx = clamp(t.x + (k === 0 ? t.vx * 0.5 : this.r(-220, 220)), A.x0 + 40, A.x1 - 40), hy = clamp(t.y + (k === 0 ? t.vy * 0.5 : this.r(-140, 140)), A.y0 + 20, A.y1 - 20);
-            this.hazards.push({ id: this.nextId++, kind: 'deadline', label: d.hazard || 'DUE', x: hx, y: hy, r: 95, t: 0, T: b.phase === 2 ? 80 : 100, dmg: 38 * this.dmgMul });
+            this.hazards.push({ id: this.nextId++, kind: 'deadline', label: d.hazard || 'DUE', x: hx, y: hy, r: 95, t: 0, T: b.phase >= 2 ? 80 : 100, dmg: 38 * this.dmgMul });
           }
           this.ev({ t: 'sfx', s: 'tick' });
         }
@@ -529,18 +683,53 @@
       } else if (b.state === 'notes') {
         b.pose = b.st < 25 ? d.frames.idle : d.frames.atk;
         if (b.st === 25 && t) {
-          const n = b.phase === 2 ? 7 : 5, base = Math.atan2((t.y - b.y) / 0.6, t.x - b.x);
-          for (let k = 0; k < n; k++) { const a = base + (k / (n - 1) - 0.5) * 0.9; this.projs.push({ id: this.nextId++, kind: 'note', tex: d.proj || 'note', owner: b, x: b.x + b.face * 80, y: b.y, z: 150, vx: Math.cos(a) * 520, vy: Math.sin(a) * 520 * 0.6, life: 110, dmg: 14 * this.dmgMul }); }
-          this.ev({ t: 'sfx', s: 'throw' });
+          const n = b.phase >= 2 ? 7 : 5, base = Math.atan2((t.y - b.y) / 0.6, t.x - b.x);
+          for (let k = 0; k < n; k++) { const a = base + (k / (n - 1) - 0.5) * 0.9; this.projs.push({ id: this.nextId++, kind: 'note', tex: d.proj || 'note', owner: b, x: b.x + b.face * 80, y: b.y, z: 150, vx: Math.cos(a) * 520, vy: Math.sin(a) * 520 * 0.6, life: 110, dmg: 14 * this.dmgMul, ang: a }); }
+          this.ev({ t: 'sfx', s: d.kit === 'muzak' ? 'sax' : 'throw' });
         }
         if (b.st >= 60) { b.state = 'idle'; b.st = 0; b.cd = 45; }
       } else if (b.state === 'summon') {
         b.pose = d.frames.summon; b.rot = Math.sin(b.st * 0.5) * 0.04;
         if (b.st === 30) {
-          const types = d.summon || ['intern']; say(b.phase === 2 ? 'EVERYONE! In my office! NOW!' : "Let's circle back! Team?!");
-          for (let k = 0; k < (b.phase === 2 ? 4 : 3); k++) this.spawnEnemy(types[k % types.length]); b.summonCd = 700;
+          const types = d.summon || ['intern']; say(d.kit === 'muzak' ? 'Rush hour, folks!' : d.kit === 'landlord' ? 'New tenants! Meet the old ones!' : b.phase >= 2 ? 'EVERYONE! In my office! NOW!' : "Let's circle back! Team?!");
+          for (let k = 0; k < (b.phase >= 2 ? 4 : 3); k++) { if (this.enemies.length < 8) this.spawnEnemy(types[k % types.length], k % 2 ? 'l' : 'r'); } b.summonCd = 700;
         }
         if (b.st >= 70) { b.state = 'idle'; b.st = 0; b.cd = 40; }
+      } else if (b.state === 'bass') {   // Muzak: bass-drop ring, jump it
+        b.pose = b.st < 40 ? d.frames.summon : d.frames.atk; b.rot = Math.sin(b.st * 0.6) * 0.03;
+        if (b.st === 4) { this.hazards.push({ id: this.nextId++, kind: 'wave', label: 'BASS DROP', x: b.x, y: b.y, r: b.phase >= 2 ? 320 : 270, t: 0, T: 46, ex: 34, dmg: 22 * this.dmgMul, hit: new Set() }); this.ev({ t: 'sfx', s: 'tick' }); }
+        if (b.st === 50 && b.phase >= 2 && t) this.hazards.push({ id: this.nextId++, kind: 'wave', label: 'BASS DROP', x: b.x, y: b.y, r: 320, t: 0, T: 30, ex: 30, dmg: 22 * this.dmgMul, hit: new Set() });
+        if (b.st >= (b.phase >= 2 ? 120 : 95)) { b.state = 'idle'; b.st = 0; b.cd = 40; }
+      } else if (b.state === 'lurch') {   // Muzak phase 3: "Going down!" lunges across the cab
+        b.pose = b.st < 34 ? d.frames.summon : d.frames.atk; b.rot = b.st < 34 ? Math.sin(b.st * 1.4) * 0.07 : 0.1 * b.face;
+        if (b.st === 2) { say(d.phase3); b.lx = t ? sign(t.x - b.x) : b.face; b.face = b.lx; this.ev({ t: 'tell', id: b.id, boss: true }); }
+        if (b.st >= 34 && b.st < 58) {
+          b.vx = b.lx * 960; b.vy *= 0.5;
+          for (const p of this.players) if (p.alive && !b.hitLurch && Math.abs(p.x - b.x) < 100 && Math.abs(p.y - b.y) < 62 && p.z < 80) { if (this.hurtPlayer(p, 26 * this.dmgMul, 460, b.x, true)) b.hitLurch = true; }
+          if (b.st % 4 === 0) this.ev({ t: 'dust', x: b.x - b.lx * 40, y: b.y });
+        } else if (b.st === 58) { b.hitLurch = false; b.vx = 0; }
+        if (b.st >= 96) { b.state = 'idle'; b.st = 0; b.cd = 45; b.hitLurch = false; }
+      } else if (b.state === 'keys') {   // Landlord: key-jangle ring
+        b.pose = b.st < 30 ? d.frames.summon : d.frames.atk; b.rot = Math.sin(b.st * 0.8) * 0.03;
+        if (b.st === 6) { this.hazards.push({ id: this.nextId++, kind: 'deadline', label: 'KEYS', x: b.x, y: b.y + 6, r: b.phase >= 2 ? 250 : 215, t: 0, T: 44, dmg: 26 * this.dmgMul }); this.ev({ t: 'sfx', s: 'keys' }); }
+        if (b.st >= 76) { b.state = 'idle'; b.st = 0; b.cd = b.phase >= 2 ? 36 : 54; }
+      } else if (b.state === 'evict') {   // homing eviction notice(s)
+        b.pose = b.st < 26 ? d.frames.summon : d.frames.atk; b.rot = 0;
+        if (b.st === 26 && t) {
+          const n = b.phase >= 2 ? 2 : 1; say('EVICTION NOTICE!');
+          for (let k = 0; k < n; k++) { const a = Math.atan2(t.y - b.y, t.x - b.x) + (k - (n - 1) / 2) * 0.7; this.projs.push({ id: this.nextId++, kind: 'homing', tex: 'eviction', owner: b, x: b.x + b.face * 80, y: b.y, z: 150, ang: a, sp: 250, t: 0, life: 230, dmg: 18 * this.dmgMul }); }
+          this.ev({ t: 'sfx', s: 'throw' });
+        }
+        if (b.st >= 70) { b.state = 'idle'; b.st = 0; b.cd = 44; }
+      } else if (b.state === 'rent') {   // RENT DUE: slam + tenants
+        b.pose = b.st < 40 ? d.frames.summon : d.frames.atk; b.rot = b.st < 40 ? -0.05 * b.face : 0.06 * b.face;
+        if (b.st === 4) say('RENT. IS. DUE!');
+        if (b.st === 40) {
+          this.hazards.push({ id: this.nextId++, kind: 'wave', label: 'RENT DUE', x: b.x, y: b.y, r: 340, t: 0, T: 0, ex: 32, dmg: 24 * this.dmgMul, hit: new Set() });
+          this.ev({ t: 'shake', a: 0.012, d: 300 }); this.ev({ t: 'stamp', x: b.x, y: b.y, z: 250, msg: 'RENT DUE' }); this.ev({ t: 'sfx', s: 'crash' });
+          if (this.enemies.length < 4) for (let k = 0; k < 2; k++) this.spawnEnemy('wfh', k ? 'l' : 'r');
+        }
+        if (b.st >= 90) { b.state = 'idle'; b.st = 0; b.cd = 50; }
       } else if (b.state === 'dizzy') {
         b.pose = d.frames.hurt; b.rot = Math.sin(b.st * 0.3) * 0.08; b.vx *= 0.8; b.vy *= 0.8;
         if (b.st >= 210) { b.state = 'idle'; b.st = 0; b.cd = 20; }
@@ -549,10 +738,26 @@
       this.physics(b, EGRAV);
     }
 
+    kitPick(b, dist, adds) {
+      const r = this.rng(), ph = b.phase; let L;
+      if (b.def.kit === 'muzak') {
+        if (dist < 230 && r < 0.4) return 'sweep';
+        L = ph === 1 ? ['bass', 'notes', 'bass'] : ph === 2 ? ['bass', 'notes', 'notes', 'summon'] : ['lurch', 'bass', 'notes', 'lurch', 'summon'];
+      } else {
+        if (dist < 230 && r < 0.4) return 'sweep';
+        L = ph === 1 ? ['keys', 'evict', 'rent', 'keys'] : ['keys', 'evict', 'rent', 'evict', 'summon'];
+      }
+      let n = L[Math.floor(this.rng() * L.length)];
+      if (n === 'summon' && (b.summonCd > 0 || adds >= 3)) n = L[0];
+      if (n === b.last && L.length > 1) n = L[(L.indexOf(n) + 1) % L.length];
+      if (n === 'summon' && (b.summonCd > 0 || adds >= 3)) n = 'notes';
+      return n;
+    }
+
     killBoss(b) {
       b.state = 'dead'; b.st = 0; b.hp = 0; this.stats.kos++; this.score += 5000;
       for (const e of this.enemies) { this.ev({ t: 'kill', x: e.x, y: e.y, z: e.z, type: e.type }); e.gone = true; }
-      this.hazards.length = 0; this.projs = this.projs.filter(p => p.kind !== 'note' && p.kind !== 'eproj');
+      this.hazards.length = 0; this.projs = this.projs.filter(p => p.kind === 'staple' || p.kind === 'case');
       this.ev({ t: 'bossdown', x: b.x, y: b.y }); this.ev({ t: 'bark', x: b.x, y: b.y, z: 330, msg: b.def.defeat[0], boss: true });
       this.slowmo = 90;
     }
@@ -565,6 +770,9 @@
           q.x += q.vx * DT; q.y += q.vy * DT;
           for (const e of this.targets()) {
             if (q.hit.has(e.id)) continue;
+            if (e.def.block >= 0.7 && e.kind === 'enemy' && sign(q.x - e.x) === e.face && sign(q.vx) === -e.face && Math.abs(e.x - q.x) < e.w + 18 && Math.abs(e.y - q.y) < 34) {   // umbrellas bounce staples straight back
+              q.hit.add(e.id); q.vx *= -1; q.hit = new Set([e.id]); this.ev({ t: 'text', x: e.x, y: e.y, z: 150, msg: 'BOING!', col: '#9fd0ff', small: true }); break;
+            }
             if (Math.abs(e.x - q.x) < e.w + 18 && Math.abs(e.y - q.y) < 34 && Math.abs(e.z + 80 - q.z) < 110) {
               q.hit.add(e.id); this.damage(e, q.owner, { dmg: q.dmg, kb: 40, stun: q.stun, from: q.x - sign(q.vx) * 50, pin: e.kind !== 'boss', breaksGuard: true });
               if (--q.pierce <= 0) { q.life = 0; break; }
@@ -578,13 +786,26 @@
           for (const e of this.targets()) {
             const dx = q.x - e.x, dy = q.y - e.y, L = Math.hypot(dx, dy * 1.6);
             if (L < C.r * 2.4 && e.kind !== 'boss') { e.x += dx / (L || 1) * C.pull * DT; e.y += dy / (L || 1) * C.pull * DT * 0.6; }
-            if (L < C.r + e.w) { const last = q.hitT.get(e.id); if (last === undefined || q.t - last >= C.every) { q.hitT.set(e.id, q.t); this.damage(e, o, { dmg: C.dmg, kb: 10, stun: 16, from: q.x, breaksGuard: true }); this.ev({ t: 'sfx', s: 'tap' }); } }
+            if (L < C.r + e.w) { const last = q.hitT.get(e.id); if (last === undefined || q.t - last >= C.every) { q.hitT.set(e.id, q.t); this.damage(e, o, { dmg: C.dmg, kb: 10, stun: 16, from: q.x, breaksGuard: true, stagger: true, castId: q.castId }); this.ev({ t: 'sfx', s: 'tap' }); } }
           }
           if (q.t > C.out + C.back + 60) q.life = 0;
         } else if (q.kind === 'note') {
           q.x += q.vx * DT; q.y += q.vy * DT;
-          for (const p of this.players) if (p.alive && Math.abs(p.x - q.x) < 30 && Math.abs(p.y - q.y) < 30 && p.z < 120) { if (this.hurtPlayer(p, q.dmg, 160, q.x - q.vx, false)) q.life = 0; }
+          for (const p of this.players) if (p.alive && Math.abs(p.x - q.x) < 30 && Math.abs(p.y - q.y) < 30 && p.z < 120) { if (this.hurtPlayer(p, q.dmg, 160, q.x - q.vx, false)) { q.life = 0; if (q.bolt) this.ev({ t: 'poofs', x: q.x, y: q.y, z: q.z }); } }
           if (q.x < this.A.x0 - 200 || q.x > this.A.x1 + 200) q.life = 0;
+        } else if (q.kind === 'boom') {   // out-and-back (delivery boxes, salaryman case)
+          q.t++; const o = q.owner; q.spin += 0.35;
+          if (q.t <= q.out) { const k = 1 - q.t / q.out * 0.4; q.x += q.ax * 460 * k * DT; q.y += q.ay * 460 * k * DT; }
+          else if (o && o.state !== 'dead' && !o.gone) { const dx = o.x - q.x, dy = o.y - q.y, L = Math.hypot(dx, dy) || 1; const sp = 260 + (q.t - q.out) * 6; q.x += dx / L * sp * DT; q.y += dy / L * sp * DT; if (L < 36) q.life = 0; }
+          else { q.x += q.ax * 300 * DT; q.y += q.ay * 300 * DT; }
+          for (const p of this.players) if (p.alive && !q.hit.has(p.id) && Math.abs(p.x - q.x) < 34 && Math.abs(p.y - q.y) < 30 && p.z < 120) {
+            if (this.hurtPlayer(p, q.dmg, 180, q.x - q.ax * 50, false)) { q.hit.add(p.id); this.applyFx(p, q.fx); }
+          }
+        } else if (q.kind === 'homing') {   // Landlord's Eviction Notice
+          let tp = null, bd = 1e9; for (const p of this.players) if (p.alive) { const d = Math.hypot(p.x - q.x, p.y - q.y); if (d < bd) { bd = d; tp = p; } }
+          if (tp && q.t++ < 150) { const want = Math.atan2(tp.y - q.y, tp.x - q.x); let da = want - q.ang; da = Math.atan2(Math.sin(da), Math.cos(da)); q.ang += clamp(da, -0.045, 0.045); }
+          q.x += Math.cos(q.ang) * q.sp * DT; q.y += Math.sin(q.ang) * q.sp * DT * 0.75;
+          for (const p of this.players) if (p.alive && Math.abs(p.x - q.x) < 36 && Math.abs(p.y - q.y) < 34 && p.z < 120) { if (this.hurtPlayer(p, q.dmg, 240, q.x - Math.cos(q.ang) * 50, false)) { q.life = 0; this.ev({ t: 'poofs', x: q.x, y: q.y, z: 100 }); } }
         } else if (q.kind === 'eproj') {   // lobbed enemy projectile (paper ball)
           q.x += q.vx * DT; q.y += q.vy * DT; q.z += q.vz * DT; q.vz -= q.g * DT; q.spin = (q.spin || 0) + 0.3;
           for (const p of this.players) if (p.alive && Math.abs(p.x - q.x) < 36 && Math.abs(p.y - q.y) < 30 && q.z < 110) { if (this.hurtPlayer(p, q.dmg, 180, q.x - q.vx, false)) { q.life = 0; this.ev({ t: 'poofs', x: q.x, y: q.y, z: q.z }); } }
@@ -598,12 +819,20 @@
     updateHazards() {
       for (const h of this.hazards) {
         h.t++;
+        if (h.kind === 'wave') {   // Mr. Muzak's bass drop: telegraph, then a ring races outward; jump it
+          if (h.t === h.T) this.ev({ t: 'sfx', s: 'boom' });
+          if (h.t > h.T && h.t <= h.T + h.ex) {
+            const rad = (h.t - h.T) / h.ex * h.r;
+            for (const p of this.players) { if (!p.alive || h.hit.has(p.id)) continue; const dd = Math.hypot(p.x - h.x, (p.y - h.y) * 1.5); if (Math.abs(dd - rad) < 46 && p.z < 70) { if (this.hurtPlayer(p, h.dmg, 280, h.x, false)) h.hit.add(p.id); } }
+          }
+          continue;
+        }
         if (h.t === h.T) {
           this.ev({ t: 'boom', x: h.x, y: h.y, r: h.r }); this.ev({ t: 'shake', a: 0.006, d: 120 });
           for (const p of this.players) { const dx = (p.x - h.x) / h.r, dy = (p.y - h.y) / (h.r * 0.55); if (dx * dx + dy * dy <= 1 && p.z < 60) this.hurtPlayer(p, h.dmg, 300, h.x, true); }
         }
       }
-      this.hazards = this.hazards.filter(h => h.t < h.T + 2);
+      this.hazards = this.hazards.filter(h => h.t < (h.kind === 'wave' ? h.T + h.ex + 2 : h.T + 2));
     }
 
     updatePickups() {
@@ -662,14 +891,20 @@
         const nxt = E[this.enc + 1], limit = nxt ? nxt.x + 560 : Math.min(S.len - 40, S.exit + 80);
         A.x0 = this.scrollMin + 40; A.x1 = Math.min(limit, minX + 1500);
         if (nxt && maxX >= nxt.x - 140) this.lock(this.enc + 1);
-        else if (!nxt && maxX >= S.exit - 30) this.finish(null);
+        else if (!nxt && maxX >= S.exit - 30) this.finish(S.endScene || null);
       } else if (this.state === 'wave') {
+        const en0 = E[this.enc];
+        if (this.cd > 0) this.cd--;
+        if (en0 && en0.countdown && this.cd === 0 && !this.dinged) { this.dinged = true; this.ev({ t: 'lift_ding' }); }
         this.spawnTick(this.curWaves[this.wave].max + 2 * (this.players.length - 1));
-        if (!this.queue.length && this.enemies.length === 0) { this.state = 'between'; this.st = 0; this.ev({ t: 'waveclear', wave: this.wave }); }
+        if (!this.queue.length && this.enemies.length === 0) { this.state = 'between'; this.st = 0; this.ev({ t: 'waveclear', wave: this.wave, quiet: !!(en0 && en0.countdown) }); }
       } else if (this.state === 'between') {
+        const en = E[this.enc];
+        if (this.cd > 0) this.cd--;
+        if (en.countdown && this.cd === 0 && !this.dinged) { this.dinged = true; this.ev({ t: 'lift_ding' }); }
         if (this.st >= 70) {
-          const en = E[this.enc];
-          if (this.wave + 1 < this.curWaves.length) this.nextWave();
+          if (en.countdown) { if (this.cd > 0) this.nextWave(Math.min(this.wave + 1, this.curWaves.length - 1)); else this.unlock(true); }   // lift lobby: keep coming until the lift arrives
+          else if (this.wave + 1 < this.curWaves.length) this.nextWave();
           else if (en.boss) this.toBoss(en);
           else this.unlock(true);
         }
@@ -688,10 +923,13 @@
       const S = this.stage, en = S.encounters[i]; this.enc = i; this.checkpoint = i; this.locked = true;
       this.view.x = clamp(en.x - 640, 0, S.len - 1280);
       this.A.x0 = this.view.x + 40; this.A.x1 = this.view.x + 1240; this.scrollMin = this.view.x;
-      this.wave = -1; this.curWaves = en.waves; this.ev({ t: 'lock', i, x: this.view.x });
+      this.wave = -1; this.curWaves = en.waves; this.cd = en.countdown ? en.countdown * 60 : 0; this.dinged = false;
+      this.ev({ t: 'lock', i, x: this.view.x, label: en.label, countdown: en.countdown || 0, cab: !!en.cab });
       if (en.waves.length) this.nextWave(); else this.toBoss(en);
     }
     unlock(go) {
+      const nx = this.stage.encounters[this.enc + 1];
+      if (go && nx && nx.chain) { this.ev({ t: 'floor', label: nx.label }); return this.lock(this.enc + 1); }   // lift cab: floor stops chain straight into the next wave
       this.locked = false; this.state = 'roam'; this.st = 0;
       const S = this.stage, nxt = S.encounters[this.enc + 1];
       if (go) this.ev({ t: 'go', label: nxt ? '' : S.exitLabel });
@@ -700,10 +938,11 @@
       this.state = 'clear'; this.st = 0; this.result = this.computeResult(); this.result.scene = scene || null;
       this.ev({ t: 'clear', result: this.result });
     }
-    nextWave() {
-      this.wave++; const w = this.curWaves[this.wave];
+    nextWave(force) {
+      this.wave = force !== undefined ? force : this.wave + 1; const w = this.curWaves[this.wave];
       this.queue = this.buildQueue(w.spawns); this.spawnT = 10; this.state = 'wave'; this.st = 0;
-      this.ev({ t: 'wave', n: this.wave + 1, of: this.curWaves.length, text: w.text });
+      const en1 = this.stage.encounters[this.enc];
+      this.ev({ t: 'wave', n: this.wave + 1, of: this.curWaves.length, text: w.text, label: en1 && en1.label, countdown: !!(en1 && en1.countdown) });
     }
     toBoss(en) {
       this.state = 'bossIntro'; this.st = 0; this.queue = [];
@@ -715,7 +954,7 @@
     dirSurvival() {
       const S = this.stage, V = this.surv;
       if (this.state === 'start') {
-        if (this.st === 1) this.ev({ t: 'card', title: 'SURVIVAL', sub: 'ENDLESS OVERTIME', lines: ['How long can Lemon last before the office wins?', 'Boss review every ' + S.bossEvery + ' waves.'] });
+        if (this.st === 1) this.ev({ t: 'card', title: 'SURVIVAL: ' + S.arenaName, sub: S.liftArena ? 'ENDLESS RUSH HOUR' : 'ENDLESS OVERTIME', lines: [S.liftArena ? 'The doors keep opening. The lift never stops.' : 'How long can the office hold you before it wins?', 'Boss review every ' + S.bossEvery + ' waves.'] });
         if (this.st >= 150) this.survNext();
       } else if (this.state === 'wave') {
         this.spawnTick(V.max);
@@ -740,17 +979,19 @@
     survNext() {
       const S = this.stage, V = this.surv, w = ++V.wave;
       this.hpMul = 1 + 0.07 * (w - 1); this.dmgMul = 1 + 0.035 * (w - 1);
-      if (w % S.bossEvery === 0) {
-        const id = S.bossRotation[(w / S.bossEvery - 1) % S.bossRotation.length];
+      if (w % S.bossEvery === 0 || (S.bossAt && S.bossAt[w])) {
+        const id = (S.bossAt && S.bossAt[w]) || S.bossRotation[(w / S.bossEvery - 1) % S.bossRotation.length];
         this.state = 'bossIntro'; this.st = 0; this.queue = [];
-        const b = this.spawnBoss(id, this.rng() < 0.5 ? 'l' : 'r', id === 'ceo' ? ['Overtime is MANDATORY.', 'Survival? We call it a Tuesday.'] : null);
+        const b = this.spawnBoss(id, S.liftArena ? 'l' : (this.rng() < 0.5 ? 'l' : 'r'), id === 'ceo' ? ['Overtime is MANDATORY.', 'Survival? We call it a Tuesday.'] : null);
         this.ev({ t: 'bossintro', name: b.def.name, text: 'WAVE ' + w + ' — PERFORMANCE REVIEW!' });
         return;
       }
       const types = S.unlocks.filter(([n]) => w >= n).map(u => u[1]);
       const total = Math.round(4 + w * 1.5), counts = {};
       for (let k = 0; k < total; k++) { const t = k < 2 ? types[types.length - 1] : types[Math.floor(this.rng() * types.length)]; counts[t] = (counts[t] || 0) + 1; }
+      if (S.speakerFrom && w >= S.speakerFrom && w % 2 === 0) counts.speaker = 1 + (w >= 14 ? 1 : 0);
       V.max = Math.min(13, 5 + Math.floor(w * 0.6));
+      if (S.liftArena) this.ev({ t: 'doors', open: true });
       this.queue = this.buildQueue(Object.entries(counts)); this.spawnT = 10; this.state = 'wave'; this.st = 0;
       const J = SURV_LINES[(w - 1) % SURV_LINES.length];
       this.ev({ t: 'wave', n: w, of: 0, text: J, surv: true });

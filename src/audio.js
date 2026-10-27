@@ -72,6 +72,8 @@
         case 'throw': this.noiz(B, t, 0.2, 0.15, 'bandpass', 600, { fEnd: 1500 }); break;
         case 'tap': this.tone(B, t, 500, 0.05, 'triangle', 0.12); break;
         case 'poof': this.noiz(B, t, 0.3, 0.25, 'bandpass', 2500, { fEnd: 600 }); this.tone(B, t, 900, 0.12, 'triangle', 0.06, { slide: 1600 }); break;
+        case 'puff': this.noiz(B, t, 0.22, 0.16, 'lowpass', 1800, { fEnd: 400 }); break;
+        case 'flash': this.tone(B, t, 1800, 0.18, 'sine', 0.1, { slide: 3200 }); this.noiz(B, t, 0.1, 0.1, 'highpass', 5000); break;
         case 'block': this.tone(B, t, 900, 0.08, 'square', 0.12); this.tone(B, t, 1350, 0.12, 'square', 0.06); break;
         case 'phurt': this.tone(B, t, 300, 0.2, 'sawtooth', 0.2, { slide: 120, lp: 1500 }); break;
         case 'dash': this.noiz(B, t, 0.18, 0.2, 'bandpass', 2000, { fEnd: 500 }); break;
@@ -92,6 +94,26 @@
         case 'elevator': this.tone(B, t, N(88), 0.6, 'sine', 0.2); this.tone(B, t + 0.25, N(84), 0.9, 'sine', 0.2); break;
         case 'thud': this.tone(B, t, 90, 0.12, 'sine', 0.2, { slide: 40 }); break;
         case 'shout': this.tone(B, t, 220, 0.3, 'sawtooth', 0.12, { slide: 140, lp: 1400 }); this.noiz(B, t, 0.25, 0.15, 'bandpass', 1200, { fEnd: 600 }); break;
+        // ---- v4 ----
+        case 'laser': this.tone(B, t, 2400, 0.7, 'sine', 0.05, { slide: 3600 }); break;
+        case 'bolt': this.tone(B, t, 1800, 0.08, 'square', 0.1, { slide: 300 }); this.noiz(B, t, 0.06, 0.2, 'highpass', 4000); break;
+        case 'zap': this.tone(B, t, 900, 0.18, 'sawtooth', 0.12, { slide: 120, lp: 3000 }); this.noiz(B, t, 0.15, 0.2, 'bandpass', 2500, { q: 3 }); break;
+        case 'ring': this.tone(B, t, 440, 0.5, 'sine', 0.18, { slide: 880 }); this.tone(B, t, 220, 0.4, 'triangle', 0.14, { slide: 110 }); break;
+        case 'ding': this.tone(B, t, N(91), 0.9, 'sine', 0.25); this.tone(B, t, N(98), 0.6, 'sine', 0.1); break;
+        case 'revup': this.tone(B, t, 70, 0.9, 'sawtooth', 0.16, { slide: 380, lp: 900, lpEnd: 2600 }); this.noiz(B, t, 0.8, 0.1, 'lowpass', 600, { fEnd: 2400 }); break;
+        case 'skid': this.noiz(B, t, 0.45, 0.2, 'bandpass', 2600, { fEnd: 1200, q: 2 }); break;
+        case 'wrench': this.tone(B, t, 1500, 0.06, 'square', 0.1); this.tone(B, t + 0.08, 1900, 0.06, 'square', 0.1); this.tone(B, t + 0.2, 880, 0.2, 'triangle', 0.12, { slide: 1760 }); break;
+        case 'brake': this.tone(B, t, 1200, 0.3, 'sawtooth', 0.12, { slide: 300, lp: 2500 }); this.noiz(B, t, 0.3, 0.2, 'bandpass', 3000, { fEnd: 800, q: 2 }); break;
+        case 'puddle': this.noiz(B, t, 0.22, 0.2, 'bandpass', 900, { fEnd: 300, q: 2 }); break;
+        case 'clang': this.tone(B, t, 520, 0.35, 'square', 0.12, { slide: 480 }); this.tone(B, t, 780, 0.3, 'triangle', 0.1); break;
+        case 'crack': this.noiz(B, t, 0.08, 0.5, 'highpass', 5000); this.tone(B, t, 3200, 0.05, 'square', 0.12, { slide: 600 }); break;
+        case 'shatter': for (let i = 0; i < 9; i++) this.noiz(B, t + i * 0.025, 0.12, 0.28, 'highpass', 4000 + r() * 4000); this.tone(B, t, 120, 0.4, 'sine', 0.3, { slide: 40 }); break;
+        case 'whoosh': this.noiz(B, t, 0.6, 0.25, 'bandpass', 400, { fEnd: 3000, q: 1 }); break;
+        case 'buzz': for (let i = 0; i < 6; i++) this.tone(B, t + i * 0.05, i % 2 ? 140 : 160, 0.05, 'square', 0.1, { lp: 600 }); break;
+        case 'phonering': for (let k = 0; k < 2; k++) for (let i = 0; i < 6; i++) this.tone(B, t + k * 0.6 + i * 0.045, i % 2 ? 1320 : 1760, 0.04, 'square', 0.07); break;
+        case 'sax': this.tone(B, t, 330, 0.5, 'sawtooth', 0.1, { slide: 392, lp: 1600, a: 0.04 }); break;
+        case 'keys': this.noiz(B, t, 0.04, 0.2, 'bandpass', 2400); this.noiz(B, t + 0.06, 0.04, 0.2, 'bandpass', 2000); break;
+        case 'crash': this.noiz(B, t, 0.9, 0.5, 'lowpass', 1800, { fEnd: 120 }); this.tone(B, t, 90, 0.8, 'sawtooth', 0.3, { slide: 25, lp: 600 }); break;
         case 'eswing': this.noiz(B, t, 0.1, 0.1, 'bandpass', 700, { fEnd: 1500 }); break;
       }
     }
@@ -136,6 +158,8 @@
       const mel = [7, null, 7, 9, null, 7, null, 4, 2, null, 4, null, 7, null, null, null]; const m2 = [9, null, 9, 11, null, 12, null, 11, 9, null, 7, null, 4, null, 2, null];
       const M = (Math.floor(s / 16) % 2 ? m2 : mel)[b]; if (s >= 32 && M !== null) a.tone(a.mBus, t, N(60 + M + 12), sd * 1.8, 'square', 0.06, { lp: 3500 });
     } },
+    // v4 phone-throw intro: tense office tick
+    introtick: { bpm: 100, play(a, s, t, sd) { if (s % 4 === 0) a.tone(a.mBus, t, N(s % 16 === 0 ? 48 : 60), sd * 0.8, 'triangle', 0.1, { lp: 900 }); if (s % 8 === 4) a.hat(t, 0.06); if (s % 32 >= 24 && s % 2 === 0) a.tone(a.mBus, t, N(72 + (s % 4)), sd * 0.5, 'square', 0.03); } },
     over: { bpm: 80, once: true, len: 24, play(a, s, t, sd) { const m = { 0: 67, 4: 66, 8: 65, 12: 64 }; if (m[s] !== undefined) a.tone(a.mBus, t, N(m[s]), sd * (s === 12 ? 10 : 3.5), 'triangle', 0.12, { lp: 1500 }); if (s === 12) a.tone(a.mBus, t, N(40), sd * 10, 'sine', 0.2); } },
   };
   // ---- v2: per-stage track variations, built from one parameterised groove generator ----
@@ -168,6 +192,16 @@
     ststreet: groove({ bpm: 132, prog: [[60, 64, 67, 72], [57, 60, 64, 69], [53, 57, 60, 65], [55, 59, 62, 67]], bass: [0, _, 12, _, 0, _, 12, 0, _, 0, 12, _, 0, _, 12, 7], bassLp: 1000,
       stabs: [2, 6, 10, 14], stabWave: 'square', stabVol: 0.025, drums: fourFloor,
       mel: [7, _, 7, 9, _, 12, _, 9, 7, _, 4, _, 2, _, 4, _, 9, _, 9, 11, _, 12, _, 14, 12, _, 11, _, 9, _, 7, _], melRoot: 72, melWave: 'triangle', melVol: 0.07, melFrom: 16, melEvery: 32 }),
+
+    // The Lift (v4): "smooth jazz hold music" gone slightly wrong, Eb maj7 lounge groove + ding every 8 bars
+    stlift: groove({ bpm: 96, prog: [[63, 67, 70, 74], [60, 63, 67, 70], [58, 62, 65, 69], [58, 61, 65, 68]], per: 16, bass: [0, _, _, 7, _, _, 12, _, 10, _, 7, _, 5, _, 3, _], bassWave: 'triangle', bassVol: 0.2, bassLp: 800, bassLen: 1.4,
+      stabs: [0, 6, 10], stabWave: 'triangle', stabVol: 0.035, stabLen: 2.2, strum: 0.02,
+      drums: (a, s, b, t) => { if (b === 0 || b === 10) a.kick(t, 0.6); if (b === 4 || b === 12) a.snare(t, 0.2); if (b % 2 === 0) a.hat(t, 0.05); if (s % 128 === 0) a.tone(a.mBus, t, N(91), 1.4, 'sine', 0.12); },
+      mel: [7, _, 10, _, 12, _, 14, _, 12, 10, _, _, 7, _, _, _, 5, _, 7, _, 10, _, 12, _, 10, 7, _, _, 3, _, _, _], melRoot: 70, melWave: 'sawtooth', melVol: 0.035, melLp: 1800, melLen: 2.2, melFrom: 0, melEvery: 64 }),
+    // The Apartment (v4): moody lo-fi in D minor
+    stapt: groove({ bpm: 98, prog: [[62, 65, 69, 72], [58, 62, 65, 69], [60, 64, 67, 71], [57, 60, 64, 67]], bass: [0, _, _, 0, _, 7, _, _, 5, _, _, 3, _, 5, _, 7], bassWave: 'triangle', bassVol: 0.2, bassLp: 700, bassLen: 1.2,
+      stabs: [0, 7, 10], stabWave: 'triangle', stabVol: 0.04, stabLen: 1.8, strum: 0.012, drums: backbeat,
+      mel: [9, _, _, 7, _, 5, _, _, 4, _, 5, _, 7, _, _, _, 9, _, _, 12, _, 10, _, _, 9, _, 7, _, 5, _, _, _], melRoot: 69, melWave: 'sine', melVol: 0.07 }),
     // The CEO of Mondays: heavy, slow-burn boss theme in C minor
     ceo: groove({ bpm: 148, prog: [[48, 51, 55], [44, 48, 51], [46, 50, 53], [43, 47, 50]], bass: [0, 0, _, 0, 0, _, 1, 0, 0, 0, _, 0, 0, _, 3, 1], bassVol: 0.18, bassLp: 600, bassLen: 0.7,
       stabs: [0, 8], stabWave: 'sawtooth', stabVol: 0.03, stabLen: 6, stabA: 0.03, tr: 12,

@@ -10,6 +10,7 @@
   // Single door into gameplay. Opens How to Play first unless hidden / skipped.
   //   opts.back = scene key for BACK, opts.label = "next up" line, opts.noHowTo = continue-the-run transitions
   CO.enterGame = (scene, key, data, opts = {}) => {
+    if (key === 'Game' && data && !data.chars) data = Object.assign({ chars: CO.sel.chars.slice() }, data);   // v4: the fighter(s) picked on the select screen
     if (opts.noHowTo || CO.params.skip || CO.howto.hidden()) { scene.scene.start(key, data); return; }
     scene.scene.start('HowTo', { target: { key, data }, back: opts.back || 'Title', label: opts.label || '' });
   };
@@ -56,7 +57,7 @@
     constructor() { super('HowTo'); }
     create(d) {
       d = this.d = d || {}; const info = this.info = !d.target; this.leaving = false;
-      const np = Math.max(1, Math.min(CO.MAX_PLAYERS || 5, CO.params.players || 1)), two = np > 1;
+      const inPlay = (d.target && d.target.data && d.target.data.chars) || CO.sel.chars, np = Math.max(1, Math.min(CO.MAX_PLAYERS || 5, CO.params.players || 1, 9) , inPlay.length), two = np > 1;
       bgFor(this);
       txt(this, 40, 18, 44, '#ffd34d').setText('HOW TO PLAY');
       txt(this, 40, 70, 18, '#cfe8ff').setText(info ? 'Your live key bindings, the items you can pick up, and a few combos.' : (d.label ? 'Up next: ' + d.label : 'Get ready!') + (two ? '   ·   ' + np + ' players' : ''));
@@ -64,7 +65,7 @@
       const px = 30, py = 104, pw = two ? 800 : 780, ph = 478; panel(this, px, py, pw, ph);
       const cols = two ? [{ k: 'ACTION', x: 50 }, { k: 'KEYBOARD P1', x: 262 }, { k: 'KEYBOARD P2', x: 452 }, { k: 'GAMEPAD', x: 612 }, { k: 'TOUCH', x: 712 }] : [{ k: 'ACTION', x: 50 }, { k: 'KEYBOARD', x: 270 }, { k: 'GAMEPAD', x: 520 }, { k: 'TOUCH', x: 650 }];
       cols.forEach(c => txt(this, c.x, py + 12, 17, '#6fd3ff').setText(c.k));
-      const B = CO.binds, T = { light: 'ATK button', heavy: 'HVY button', jump: 'JUMP button', dash: 'DASH button', s1: 'coffee icon', s2: 'stapler icon', s3: 'briefcase icon', ult: 'clock icon', pause: 'II (top right)' };
+      const B = CO.binds, T = { light: 'ATK button', heavy: 'HVY button', jump: 'JUMP button', dash: 'DASH button', s1: 'skill icon 1', s2: 'skill icon 2', s3: 'skill icon 3', ult: 'ULT icon', pause: 'II (top right)' };
       const mv = s => ['up', 'left', 'down', 'right'].map(a => CO.keyName(B.keys(s, a)[0])).join(' ');
       const rows = [['Move', mv(0), mv(1), 'Left stick / D-pad', 'Left thumb stick'],
         ...B.ACTIONS.slice(4).map(([a, l]) => [l, CO.keyLabel(0, a), CO.keyLabel(1, a), B.pad[a] ? CO.padLabel(a) : '—', T[a]])];
@@ -80,13 +81,15 @@
       txt(this, ix + 16, py + 10, 20, '#ffd34d').setText('ITEMS  (dropped by coworkers)');
       const item = (y, key, name, lines, sc) => { const b = this.add.graphics(); b.fillStyle(0x000000, 0.35); b.fillRoundedRect(ix + 14, y, 72, 62, 8); this.add.image(ix + 50, y + 31, key).setScale(sc);
         txt(this, ix + 98, y + 1, 18, '#ffffff').setText(name); txt(this, ix + 98, y + 26, 14, '#cfe8ff', {}, { wordWrap: { width: 290 } }).setText(lines); };
-      item(py + 42, 'bean', 'COFFEE BEAN', '+30 caffeine — refills the meter you spend on skills.', 1.4);
+      item(py + 42, 'bean', 'COFFEE BEAN', '+30 caffeine / nitro — refills the meter you spend on skills.', 1.4);
       item(py + 114, 'donut', 'BIRTHDAY CAKE', '+60 HP — rarer drop. Grab them before they vanish!', 1.3);
       // ---- tips ----
       panel(this, ix, py + 208, iw, ph - 208);
       txt(this, ix + 16, py + 218, 20, '#ffd34d').setText('COMBOS & SPECIALS');
-      const tips = ['Tap ATK ×4: Memo → Cc: Everyone → Bcc: → Spin Cycle.', 'HEAVY = Hard Copy (hold to charge a Final Draft). HEAVY mid-combo: Rubber Stamp / Promotion launcher.', 'JUMP then ATK to juggle; HEAVY in the air = Hole Punch dive.', 'DASH then ATK = Commute lunge. Skills cost caffeine.', 'Hits fill the CLOCK-OUT meter — when it glows, unleash it!'];
-      let ty = py + 248; tips.forEach(t => { const o = txt(this, ix + 34, ty, 14, '#ffffff', {}, { wordWrap: { width: 345 } }); o.setText(t); txt(this, ix + 16, ty - 1, 14, '#6fd3ff').setText('•'); ty += o.height + 6; });
+      const L = { lemon: ['LEMON: ATK ×4 = Memo → Cc → Bcc → Spin Cycle. HEAVY = Hard Copy (hold: Final Draft). JUMP+ATK juggles; HEAVY in the air = Hole Punch.', 'Coffee Rush / Staple Barrage / Briefcase Spin cost caffeine. Full meter: CLOCK OUT.'],
+        weisheng: ['WEISHENG: ATK ×4 = Jab → Cross → Sweep → Spin Out. HEAVY = Torque Slam (hold: Full Tank). Fast dash, air-dash.', 'Garage Tune-Up heals (allies too), Emergency Brake stuns, Hairpin Drift slides. Full meter: HYPERION ZERO.'] };
+      const tips = [].concat(...inPlay.filter((c, i) => inPlay.indexOf(c) === i).map(c => L[c] || [])).concat(['Hits fill the ULT meter — when it glows, unleash it!', 'New zombies: dodge the telegraph (cones, rings: JUMP the shock-waves), avoid puddles & spills.', 'Co-op: P1 = keyboard 1 / pad 1, P2 = keyboard 2 / pad 2, P3-5 = pads.']);
+      let ty = py + 248; tips.forEach(t => { const o = txt(this, ix + 34, ty, 13, '#ffffff', {}, { wordWrap: { width: 350 } }); o.setText(t); txt(this, ix + 16, ty - 1, 13, '#6fd3ff').setText('•'); ty += o.height + 4; });
       // ---- buttons ----
       const items = [];
       if (!info) items.push({ label: 'START  ▶', w: 250, size: 28, kind: 'go', def: true, cb: () => this.go() });

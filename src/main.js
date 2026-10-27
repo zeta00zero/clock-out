@@ -7,7 +7,7 @@
     input: { activePointers: 6, gamepad: false },
     render: { antialias: true, roundPixels: false, powerPreference: 'high-performance' },
     fps: { target: 60 },
-    scene: [S.Boot, S.Title, S.StageSelect, S.HowTo, S.Controls, S.Intro, S.Cutscene, S.Game, S.HUD, S.Touch, S.Settings, S.Pause, S.GameOver, S.Result],
+    scene: [S.Boot, S.PhoneIntro, S.Title, S.CharSelect, S.StageSelect, S.HowTo, S.Controls, S.Intro, S.Cutscene, S.Game, S.HUD, S.Touch, S.Ambient, S.Settings, S.Pause, S.GameOver, S.Result],
   };
   window.__game = new Phaser.Game(config);
   window.__CO = CO;

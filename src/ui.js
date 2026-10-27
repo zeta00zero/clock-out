@@ -2,8 +2,9 @@
 (function (CO) {
   const Q = new URLSearchParams(location.search);
   CO.params = { bot: Q.has('bot'), speed: Math.max(1, +Q.get('speed') || 1), god: Q.has('god'), skip: Q.has('skip'), seed: +Q.get('seed') || 0, touch: Q.get('touch'), boss: Q.has('boss'),
-    stage: Q.get('stage') || (Q.has('survival') ? 'survival' : null), players: +Q.get('players') || 1, chain: Q.has('chain'), cpu: Q.has('cpu') };
-  const DEF = { music: 0.6, sfx: 0.8, touch: 'auto', shake: true };
+    stage: Q.get('stage') || (Q.has('survival') ? 'survival' : null), players: +Q.get('players') || 1, chain: Q.has('chain'), cpu: Q.has('cpu'),
+    char: Q.get('char') || null, chars: Q.get('chars') ? Q.get('chars').split(',').filter(c => c) : null, fx: Q.get('fx') || null, noflash: Q.has('noflash'), nointro: Q.has('nointro') };
+  const DEF = { music: 0.6, sfx: 0.8, touch: 'auto', shake: true, fx: 'auto' };
   try { CO.settings = Object.assign({}, DEF, JSON.parse(localStorage.getItem('clockout.settings') || '{}')); } catch (e) { CO.settings = Object.assign({}, DEF); }
   CO.saveSettings = () => { try { localStorage.setItem('clockout.settings', JSON.stringify(CO.settings)); } catch (e) {} CO.audio.setVolumes(CO.settings.music, CO.settings.sfx); };
   CO.audio.setVolumes(CO.settings.music, CO.settings.sfx);
@@ -15,18 +16,34 @@
   const load = (k, d) => { try { return Object.assign({}, d, JSON.parse(localStorage.getItem(k) || '{}')); } catch (e) { return Object.assign({}, d); } };
   const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
   CO.save = {
-    progress: () => load('clockout.progress', { unlocked: 1, grades: {}, clocks: {}, seenIntro: false, won: false }),
+    // v4: the story grew from 5 to 7 stages (new: 4 THE LIFT, 6 THE APARTMENT). Old saves (no `ver`) are migrated once:
+    //   old s4 Rooftop -> s5, old s5 Streets -> s7; unlocked 1-4 stay, 5 (Rooftop cleared) -> 6, a won save -> 7.
+    progress() {
+      let raw = null; try { raw = JSON.parse(localStorage.getItem('clockout.progress') || 'null'); } catch (e) {}
+      if (raw && raw.ver !== 4) {
+        const g = raw.grades || {}, c = raw.clocks || {}, u = Math.max(1, Math.min(5, +raw.unlocked || 1)), won = !!raw.won || !!g.s5;
+        const ng = {}, nc = {}; for (const k of Object.keys(g)) ng[k === 's4' ? 's5' : k === 's5' ? 's7' : k] = g[k]; for (const k of Object.keys(c)) nc[k === 's4' ? 's5' : k === 's5' ? 's7' : k] = c[k];
+        raw = { unlocked: won ? 7 : u >= 5 ? 6 : u, grades: ng, clocks: nc, seenIntro: !!raw.seenIntro, won, ver: 4 }; store('clockout.progress', raw);
+      }
+      return load('clockout.progress', { unlocked: 1, grades: {}, clocks: {}, seenIntro: false, won: false, ver: 4 });
+    },
     stageClear(id, r) {
       const P = this.progress(), i = CO.STORY_ORDER.indexOf(id); if (i < 0) return P;
       P.unlocked = Math.max(P.unlocked, Math.min(CO.STORY_ORDER.length, i + 2));
       const rank = g => 'SABCD'.indexOf(g); const old = P.grades[id];
       if (!old || rank(r.grade.g) < rank(old)) P.grades[id] = r.grade.g;
-      P.clocks[id] = r.clock; if (id === 's5') P.won = true; store('clockout.progress', P); return P;
+      P.clocks[id] = r.clock; if (id === CO.STORY_ORDER[CO.STORY_ORDER.length - 1]) P.won = true; P.ver = 4; store('clockout.progress', P); return P;
     },
-    markIntro() { const P = this.progress(); P.seenIntro = true; store('clockout.progress', P); },
+    markIntro() { const P = this.progress(); P.seenIntro = true; P.ver = 4; store('clockout.progress', P); },
     best: () => load('clockout.best', { score: 0, wave: 0, sec: 0 }),
     survivalBest(r) { const B = this.best(); if (r.score > B.score) { B.score = r.score; B.wave = r.wave; B.sec = r.sec; store('clockout.best', B); B.isNew = true; } return B; },
   };
+  // v4: fighter selection (1-5 players). Order: ?chars= / ?char= params > last choice saved in this browser > Lemon.
+  const ARN = CO.SURV_ARENAS || ['survival'];
+  CO.sel = Object.assign({ chars: ['lemon'], arena: 'survival' }, load('clockout.sel', {}));
+  if (CO.params.chars) CO.sel.chars = CO.params.chars.slice(); else if (CO.params.char) CO.sel.chars = [CO.params.char];
+  CO.sel.chars = CO.sel.chars.filter(c => CO.CHARACTERS[c]); if (!CO.sel.chars.length) CO.sel.chars = ['lemon']; if (ARN.indexOf(CO.sel.arena) < 0) CO.sel.arena = ARN[0];
+  CO.saveSel = () => store('clockout.sel', { chars: CO.sel.chars, arena: CO.sel.arena });
   CO.startStage = (scene, id, extra = {}) => {
     const P = CO.save.progress(), i = CO.STORY_ORDER.indexOf(id), prev = i > 0 ? P.clocks[CO.STORY_ORDER[i - 1]] : 0;
     const data = Object.assign({ stage: id, clock: Math.max(CO.STAGES[id].clock || 0, prev || 0) }, extra), S = CO.STAGES[id];
@@ -86,35 +103,39 @@
     }
     create() {
       CO.makeTextures(this);
-      if (CO.params.skip) this.scene.start('Game', { stage: CO.params.stage || 's1' }); else this.scene.start('Title');
+      if (CO.params.skip) this.scene.start('Game', { stage: CO.params.stage || 's1', chars: CO.sel.chars.slice() });
+      else if (CO.params.nointro || CO.params.bot) this.scene.start('Title'); else this.scene.start('PhoneIntro');   // v4: phone-throw intro, then the title
     }
   }
 
   // ---------- Title ----------
   class Title extends Phaser.Scene {
     constructor() { super('Title'); }
-    create() {
-      this.add.image(640, 360, 'bg_title').setDisplaySize(1280, 720);
+    create(d) {
+      d = d || {}; this.add.image(640, 360, 'bg_title').setDisplaySize(1280, 720);
       const sh = this.add.graphics(); sh.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0, 0.85, 0); sh.fillRect(0, 280, 700, 440);
-      CO.audio.play('title');
+      CO.audio.play('title'); this.fresh = new CO.Fresh(this, d.fromIntro ? 350 : 0);
+      const arenaName = () => CO.STAGES[CO.sel.arena].arenaName, coopN = this.coopN = Math.max(2, Math.min(CO.MAX_PLAYERS, CO.sel.chars.length));
       this.menu = new Menu(this, 250, 330, [
-        { label: 'STORY', sub: '(CLOCK IN)', size: 30, cb: () => this.go() },
+        { label: 'STORY', sub: '(CLOCK IN)', size: 30, cb: () => this.pick(1, { scene: 'Intro' }) },
         { label: 'STAGE SELECT', size: 24, cb: () => { this.cameras.main.fadeOut(250); this.time.delayedCall(270, () => this.scene.start('StageSelect')); } },
-        { label: 'SURVIVAL', size: 28, cb: () => { this.cameras.main.fadeOut(250); this.time.delayedCall(270, () => CO.enterGame(this, 'Game', { stage: 'survival' }, { back: 'Title', label: 'Survival — the Arena' })); } },
-        { label: 'CO-OP 1-5', sub: '(coming soon)', size: 24, disabled: true },
+        { label: () => 'SURVIVAL  ◀ ' + arenaName() + ' ▶', size: 24, adjust: d => { CO.sel.arena = ARN[(ARN.indexOf(CO.sel.arena) + d + ARN.length) % ARN.length]; CO.saveSel(); }, cb: () => this.pick(1, { game: CO.sel.arena }) },
+        { label: () => 'CO-OP  ◀ ' + this.coopN + ' PLAYERS ▶', size: 24, adjust: d => { this.coopN = Phaser.Math.Clamp(this.coopN + d, 2, CO.MAX_PLAYERS); }, cb: () => this.pick(this.coopN, { scene: 'StageSelect' }) },
         { label: 'HOW TO PLAY', size: 24, cb: () => this.scene.start('HowTo', { back: 'Title' }) },
         { label: 'CONTROLS', sub: '(key binding)', size: 24, cb: () => this.scene.start('Controls', { back: { key: 'Title' } }) },
         { label: 'SETTINGS', size: 24, cb: () => { this.scene.pause(); this.scene.launch('Settings', { from: 'Title' }); } },
       ], { w: 380, h: 46, gap: 8 });
       const B = CO.save.best();
       this.add.text(70, 704, (B.score ? 'SURVIVAL BEST: ' + B.score.toLocaleString() + ' pts · wave ' + B.wave + '   ·   ' : '') + (CO.isTouchDevice() ? 'Tap to choose.' : 'WASD/Arrows + Enter  ·  Gamepad OK'), CO.style(17, '#cfe8ff')).setOrigin(0, 0.5);
-      this.add.text(1265, 708, 'v3.2 · Story (5 stages) + Survival · Lemon', CO.style(14, '#9aa7c7')).setOrigin(1, 1);
-      this.cameras.main.fadeIn(400);
+      this.add.text(1265, 708, 'v4 · 7-stage Story + Survival · Lemon & Weisheng · 1-5 player co-op', CO.style(14, '#9aa7c7')).setOrigin(1, 1);
+      if (!d.seamless) this.cameras.main.fadeIn(d.fromIntro ? 180 : 400);
       this.events.on('resume', () => { CO.menuInput.update(); });
     }
+    // v4: every mode goes through the fighter pick (remembers the last choice)
+    pick(n, next) { this.cameras.main.fadeOut(250); this.time.delayedCall(270, () => this.scene.start('CharSelect', { n, next, back: 'Title' })); }
     // v3.2: STORY always plays the intro story (Esc / Skip leaves it); it used to jump straight to Stage Select once a save had seenIntro (any v2/v3 save) = 'the story is not there'
     go() { this.cameras.main.fadeOut(300); this.time.delayedCall(320, () => this.scene.start('Intro')); }
-    update() { this.menu.update(); }
+    update() { const I = CO.menuInput.intent; this.fresh.poll(I && I.h ? I : { h: {} }); if (this.fresh.ok) this.menu.update(); }
   }
 
   // ---------- Stage select ----------
@@ -126,15 +147,20 @@
       this.prev = this.add.image(860, 330, 'bg_3f').setDisplaySize(720, 405);
       const fr = this.add.graphics(); fr.lineStyle(5, 0x6fd3ff); fr.strokeRect(500, 127, 720, 405);
       this.add.text(60, 40, 'CLOCK IN — STAGE SELECT', CO.style(42, '#ffd34d'));
-      this.add.text(60, 92, 'Escape the office. 3F → 2F → Lobby → Rooftop → the Streets. STARSHIFT at 8 PM.', CO.style(18, '#cfe8ff'));
+      this.add.text(60, 92, '3F → 2F → Lobby → The Lift → Rooftop → The Apartment → The Streets.   STARSHIFT at 8 PM.', CO.style(18, '#cfe8ff'));
       this.title = this.add.text(860, 560, '', CO.style(30, '#ffffff')).setOrigin(0.5, 0);
       this.cap = this.add.text(860, 602, '', CO.style(18, '#cfe8ff', { align: 'center', wordWrap: { width: 700 } })).setOrigin(0.5, 0);
       this.lock = this.add.text(860, 330, '🔒 LOCKED', CO.style(48, '#ffffff')).setOrigin(0.5);
-      const items = CO.STORY_ORDER.map((id, k) => { const S = CO.STAGES[id], g = P.grades[id]; return { label: (k + 1) + '. ' + S.name, sub: g ? '[' + g + ']' : (k < P.unlocked ? '' : '🔒'), size: 24, disabled: k >= P.unlocked, cb: () => this.start(id) }; });
-      items.push({ label: 'WATCH INTRO', size: 20, cb: () => this.scene.start('Intro') });
-      items.push({ label: 'BACK', size: 22, cb: () => this.scene.start('Title') });
-      this.menu = new Menu(this, 250, 170, items, { w: 340, h: 50, gap: 10, onBack: () => this.scene.start('Title') });
-      this.menu.i = Math.min(P.unlocked, 5) - 1; this.menu.draw();
+      const items = CO.STORY_ORDER.map((id, k) => { const S = CO.STAGES[id], g = P.grades[id]; return { label: (k + 1) + '. ' + S.name, sub: g ? '[' + g + ']' : (k < P.unlocked ? '' : '🔒'), size: 22, disabled: k >= P.unlocked, cb: () => this.start(id) }; });
+      // v4: fighter / co-op line (cycles LEMON -> WEISHENG -> CO-OP 2P -> ...) and the two Survival arenas
+      const IDS = Object.keys(CO.CHARACTERS), opts = IDS.map(c => [c]).concat([IDS.slice(0, 2)]), cur = () => Math.max(0, opts.findIndex(o => o.join() === CO.sel.chars.join()));
+      const fl = () => CO.sel.chars.length > 1 ? 'CO-OP · ' + CO.sel.chars.map(c => CO.CHARACTERS[c].name).join(' + ') : 'FIGHTER · ' + CO.CHARACTERS[CO.sel.chars[0]].name;
+      items.push({ label: () => '◀ ' + fl() + ' ▶', size: 18, adjust: d => { CO.sel.chars = opts[(cur() + d + opts.length) % opts.length].slice(); CO.saveSel(); }, cb: () => this.scene.start('CharSelect', { n: CO.sel.chars.length, next: { scene: 'StageSelect' }, back: 'StageSelect' }) });
+      items.push({ label: () => 'SURVIVAL  ◀ ' + CO.STAGES[CO.sel.arena].arenaName + ' ▶', size: 18, adjust: d => { CO.sel.arena = ARN[(ARN.indexOf(CO.sel.arena) + d + ARN.length) % ARN.length]; CO.saveSel(); }, cb: () => { this.cameras.main.fadeOut(250); this.time.delayedCall(270, () => CO.enterGame(this, 'Game', { stage: CO.sel.arena }, { back: 'StageSelect', label: 'Survival — ' + CO.STAGES[CO.sel.arena].arenaName })); } });
+      items.push({ label: 'WATCH INTRO', size: 18, cb: () => this.scene.start('Intro') });
+      items.push({ label: 'BACK', size: 20, cb: () => this.scene.start('Title') });
+      this.menu = new Menu(this, 250, 150, items, { w: 340, h: 40, gap: 6, onBack: () => this.scene.start('Title') });
+      this.menu.i = Math.min(P.unlocked, CO.STORY_ORDER.length) - 1; this.menu.draw();
       this.shown = -1; CO.audio.play('title'); this.cameras.main.fadeIn(250);
       window.__stageSelect = true;
     }
@@ -167,9 +193,10 @@
         { label: () => 'SOUND FX  ' + pct(S.sfx), adjust: d => { S.sfx = Phaser.Math.Clamp(Math.round(S.sfx * 10 + d) / 10, 0, 1); CO.saveSettings(); } },
         { label: () => 'TOUCH CONTROLS  ◀ ' + S.touch.toUpperCase() + ' ▶', adjust: d => { S.touch = tset[(tset.indexOf(S.touch) + d + 3) % 3]; CO.saveSettings(); const t = this.scene.get('Touch'); if (t && t.refresh) t.refresh(); } },
         { label: () => 'SCREEN SHAKE  ◀ ' + (S.shake ? 'ON' : 'OFF') + ' ▶', adjust: () => { S.shake = !S.shake; CO.saveSettings(); } },
+        { label: () => 'EFFECTS  ◀ ' + (S.fx || 'auto').toUpperCase() + ' ▶', adjust: d => { const f = ['auto', 'high', 'low']; S.fx = f[(f.indexOf(S.fx || 'auto') + d + 3) % 3]; CO.fxAutoLow = false; CO.saveSettings(); const g = this.scene.get('Ambient'); if (g && g.rebuild) g.rebuild(); const gm = this.scene.get('Game'); if (gm && gm.refreshFx) gm.refreshFx(); } },
         { label: 'BACK', cb: back },
       ], { w: 560, align: 'center', depth: 10, onBack: back });
-      this.add.text(640, 640, 'Left/Right (or tap the sides) to change', CO.style(18, '#9aa7c7')).setOrigin(0.5);
+      this.add.text(640, 640, 'Left/Right (or tap the sides) to change  ·  EFFECTS: HIGH = lighting, rim light, rain, reflections · LOW = lean (auto on phones)', CO.style(18, '#9aa7c7')).setOrigin(0.5);
     }
     update() { this.menu.update(); }
   }
@@ -196,6 +223,7 @@
       this.i++; const P = this.panels;
       if (this.i >= P.length) return this.go();
       CO.audio.sfx(this.i === 0 ? 'tick' : 'ui'); this.fresh.relock(300);   // input lock on every new line
+      if (P[this.i].img) this.bg.setTexture(P[this.i].img).setDisplaySize(1280, 720);
       this.title.setText(P[this.i].t).setScale(0.6).setAlpha(0); this.tweens.add({ targets: this.title, scale: 1, alpha: 1, duration: 260, ease: 'Back.out' });
       this.full = P[this.i].s; this.ch = 0; this.sub.setText(''); this.doneAt = 0;
       window.__cutscene = (this.d.scene || 'intro') + ':' + this.i;
@@ -223,7 +251,7 @@
       this.add.rectangle(640, 360, 1280, 720, 0x060914, 0.78).setInteractive();
       this.add.text(640, 120, 'PAUSED', CO.style(64, '#ffd34d')).setOrigin(0.5);
       this.add.text(640, 175, '"Taking a quick break." (Do NOT tell the Micromanager.)', CO.style(20, '#cfe8ff')).setOrigin(0.5);
-      const resume = () => { this.scene.stop(); this.scene.resume('Game'); this.scene.resume('HUD'); const g = this.scene.get('Game'); g.syncInput(); };
+      const resume = () => { this.scene.stop(); this.scene.resume('Game'); this.scene.resume('HUD'); this.scene.resume('Ambient'); const g = this.scene.get('Game'); g.syncInput(); };
       this.menu = new Menu(this, 640, 260, [
         { label: 'RESUME', cb: resume },
         { label: 'RESTART STAGE', cb: () => { this.scene.stop(); const g = this.scene.get('Game'); g.restart(Object.assign({}, g.data0, { checkpoint: null, continues: 0, stats: null })); } },
@@ -253,14 +281,14 @@
         this.add.text(640, 300, 'Wave ' + R.wave + '  ·  ' + mm + ':' + String(ss).padStart(2, '0') + ' survived  ·  ' + R.score.toLocaleString() + ' pts', CO.style(26, '#ffffff')).setOrigin(0.5);
         this.add.text(640, 340, R.best.isNew ? '★ NEW PERSONAL BEST! ★' : 'Best: ' + R.best.score.toLocaleString() + ' pts (wave ' + R.best.wave + ')', CO.style(24, R.best.isNew ? '#ffd34d' : '#cfe8ff')).setOrigin(0.5);
         this.menu = new Menu(this, 640, 430, [
-          { label: 'AGAIN!', cb: () => { this.scene.stop(); g.restart({ stage: 'survival' }); } },
+          { label: 'AGAIN!', cb: () => { this.scene.stop(); g.restart(Object.assign({}, g.data0, { checkpoint: null, continues: 0, stats: null })); } },
           { label: 'QUIT TO TITLE', cb: () => { this.scene.stop(); g.quit(); } },
         ], { w: 380, align: 'center' });
         return;
       }
       const S = CO.STAGES[data.stage];
       this.add.text(640, 300, data.checkpoint !== null && data.checkpoint !== undefined ? 'Retry from the last locked area of ' + S.name + '. (-1500 review points)' : 'Retry from the start of ' + S.name + '.', CO.style(22, '#cfe8ff')).setOrigin(0.5);
-      this.add.text(640, 335, 'STARSHIFT starts at 8 PM. The clock does not care.', CO.style(22, '#ffd34d')).setOrigin(0.5);
+      this.add.text(640, 335, 'STARSHIFT starts at 8 PM. The clock does not care.' + (CO.activePlayers > 1 ? '  (Whole team down.)' : ''), CO.style(22, '#ffd34d')).setOrigin(0.5);
       this.menu = new Menu(this, 640, 430, [
         { label: 'RETRY', cb: () => { this.scene.stop(); g.restart(Object.assign({}, g.data0, { checkpoint: data.checkpoint, continues: data.continues + 1, stats: data.stats })); } },
         { label: 'QUIT TO TITLE', cb: () => { this.scene.stop(); this.scene.get('Game').quit(); } },
@@ -280,7 +308,7 @@
       this.tweens.add({ targets: bg, scale: bg.scale * 1.05, duration: 12000 });
       this.cameras.main.fadeIn(500, 255, 255, 255);
       const late = !r.onTime, hm = r.clockH % 12 + ':' + String(r.clockM).padStart(2, '0') + ' PM';
-      const head = this.add.text(40, 40, last ? (late ? 'SHE MADE IT... FASHIONABLY LATE.' : 'CLOCKED OUT. SHE MADE IT.') : 'STAGE ' + S.num + ' CLEAR — ' + S.name, CO.style(44, '#ffd34d')).setAlpha(0);
+      const head = this.add.text(40, 40, last ? (late ? (CO.activePlayers > 1 ? 'THEY MADE IT... FASHIONABLY LATE.' : 'SHE MADE IT... FASHIONABLY LATE.') : (CO.activePlayers > 1 ? 'CLOCKED OUT. THEY MADE IT.' : 'CLOCKED OUT. SHE MADE IT.')) : 'STAGE ' + S.num + ' CLEAR — ' + S.name, CO.style(44, '#ffd34d')).setAlpha(0);
       const sub = this.add.text(40, 96, last ? 'Reached STARSHIFT at ' + hm + ' — ' + (late ? 'missed the opener, caught the encore.' : this.spare(r) + ' to spare. Seat A-12. Lightsticks UP.')
         : S.clear + '\nIt is ' + hm + '. ' + (late ? 'STARSHIFT has started. RUN.' : this.spare(r) + ' until STARSHIFT.'), CO.style(22, '#ffffff', { wordWrap: { width: 780 } })).setAlpha(0);
       this.tweens.add({ targets: [head, sub], alpha: 1, duration: 500, delay: 300 });
@@ -297,7 +325,7 @@
       const g = this.add.graphics(); g.fillStyle(0xfdfbf3, 0.97); g.fillRoundedRect(X - 20, Y - 10, 400, 520, 8); g.lineStyle(4, 0x1b2a6b); g.strokeRoundedRect(X - 20, Y - 10, 400, 520, 8);
       const panel = this.add.container(0, 0, [g]);
       const ink = (x, y, s, size = 22, col = '#1b2a6b', o = {}) => { const t = this.add.text(x, y, s, Object.assign({ fontFamily: '"Courier New", monospace', fontSize: size + 'px', color: col, fontStyle: 'bold' }, o)); panel.add(t); return t; };
-      ink(X, Y + 4, 'PERFORMANCE REVIEW', 28); ink(X, Y + 40, 'LEMON  ·  ' + (this.S.num ? 'S' + this.S.num + ' ' : '') + this.S.name, 17, '#55606e');
+      ink(X, Y + 4, 'PERFORMANCE REVIEW', 28); ink(X, Y + 40, (CO.lastChars || ['LEMON']).join(' + ') + '  ·  ' + (this.S.num ? 'S' + this.S.num + ' ' : '') + this.S.name, 17, '#55606e');
       const mm = Math.floor(r.sec / 60), ss = Math.floor(r.sec % 60);
       const rows = [['Time on the clock', mm + ':' + String(ss).padStart(2, '0'), r.time], ['Longest combo', r.stats.maxCombo + ' hits', r.combo], ['Damage taken', Math.round(r.stats.dmgTaken) + ' HP', r.dmg], ['Coworkers filed', r.stats.kos + '', r.ko], ['Overtime bursts', r.stats.overtimes + '', null], ['Continues', r.continues + '', r.continues ? -1500 * r.continues : null]];
       rows.forEach((row, k) => { const y = Y + 84 + k * 38; const a = ink(X, y, row[0], 18), b = ink(X + 205, y, row[1], 18, '#000'), c = ink(X + 360, y, row[2] === null ? '' : (row[2] >= 0 ? '+' : '') + row[2], 18, row[2] < 0 ? '#b03a2e' : '#2a7a3a').setOrigin(1, 0);

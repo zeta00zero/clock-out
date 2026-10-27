@@ -11,8 +11,8 @@
   // ---------------------------------------------------------------------------------------------
   const KB_ACTIONS = [   // [id, label]  (order = Controls screen order)
     ['up', 'Move Up'], ['down', 'Move Down'], ['left', 'Move Left'], ['right', 'Move Right'],
-    ['light', 'Attack (Memo combo)'], ['heavy', 'Heavy (Hard Copy)'], ['jump', 'Jump'], ['dash', 'Dash'],
-    ['s1', 'Coffee Rush'], ['s2', 'Staple Barrage'], ['s3', 'Briefcase Spin'], ['ult', 'Clock Out (ultimate)'], ['pause', 'Pause'],
+    ['light', 'Attack (combo)'], ['heavy', 'Heavy (smash)'], ['jump', 'Jump'], ['dash', 'Dash'],
+    ['s1', 'Skill 1'], ['s2', 'Skill 2'], ['s3', 'Skill 3'], ['ult', 'Ultimate'], ['pause', 'Pause'],
   ];
   const PAD_ACTIONS = ['light', 'heavy', 'jump', 'dash', 's1', 's2', 's3', 'ult', 'pause'];
   const KB_DEF = [
