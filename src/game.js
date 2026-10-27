@@ -5,22 +5,44 @@
 
   class Game extends Phaser.Scene {
     constructor() { super('Game'); }
+    // v3: story maps are WebP chunks in maps/maps_<id>.js, loaded per stage (script tag => works from file://)
     create(data) {
+      data = data || {}; const id = data.stage || 'survival';
+      this.sim = null;
+      for (const k of Object.keys(this.textures.list)) if (k.indexOf('map_') === 0 && k.indexOf('map_' + id + '_') !== 0) this.textures.remove(k);   // drop the previous stage's chunks
+      if (id === 'survival' || this.textures.exists('map_' + id + '_n0')) return this.build(data);
+      const t = this.add.text(640, 360, 'LOADING…', CO.style(30, '#ffffff')).setOrigin(0.5);
+      const done = () => { t.destroy(); this.build(data); };
+      const addImgs = () => {
+        const D = window.MAPDATA && window.MAPDATA[id]; if (!D) { console.error('map data missing', id); return done(); }
+        for (const k in D.img) this.load.image(k, D.img[k]);
+        this.load.once('complete', done); this.load.start();
+      };
+      if (window.MAPDATA && window.MAPDATA[id]) return addImgs();
+      const sc = document.createElement('script'); sc.src = 'maps/maps_' + id + '.js'; sc.onload = () => addImgs(); sc.onerror = () => { console.error('map script failed', id); done(); }; document.head.appendChild(sc);   // plain <script>: works on file:// (XHR does not)
+    }
+    buildMap(id, W) {
+      const D = window.MAPDATA[id], M = D.meta;
+      if (M.sky) this.add.image(0, 0, M.sky.k).setOrigin(0).setScrollFactor(M.sky.F, 0).setDepth(-30);
+      for (const c of M.far) this.add.image(c.x, M.farY || 0, c.k).setOrigin(0).setScrollFactor(M.F, 0).setDepth(-20);
+      for (const c of M.near) this.add.image(c.x, 0, c.k).setOrigin(0).setDepth(0);
+    }
+    build(data) {
       data = this.data0 = data || {};
       const stageId = data.stage || 'survival', S = this.S = CO.STAGES[stageId];
       this.mode = stageId === 'survival' ? 'survival' : 'story';
       let cp = data.checkpoint; if (cp === undefined && CO.params.boss && S.encounters) cp = S.encounters.length - 1;
       this.sim = new CO.Sim({ seed: CO.params.seed || ((Math.random() * 1e9) | 0), stage: stageId, mode: this.mode, checkpoint: cp, continues: data.continues || 0, stats: data.stats, god: CO.params.god, clock: Math.max(S.clock || 0, data.clock || 0), score: data.score });
       // players: P1 = keyboard/pad/touch (or bot in tests); extra slots (debug ?players=N) = CPU bots
-      const n = Phaser.Math.Clamp(CO.params.players || 1, 1, CO.MAX_PLAYERS); this.inputs = [];
+      const n = Phaser.Math.Clamp(CO.params.players || 1, 1, CO.MAX_PLAYERS); this.inputs = []; CO.activePlayers = n;
       const chars = data.chars || [];
       for (let k = 0; k < n; k++) {
         this.sim.addPlayer(chars[k] || 'lemon', k);
-        this.inputs.push(CO.Input.forSlot(k, { bot: k === 0 ? CO.params.bot : true, getSim: () => this.sim }));
+        this.inputs.push(CO.Input.forSlot(k, { bot: k === 0 ? CO.params.bot : !!(CO.params.bot || CO.params.cpu), getSim: () => this.sim }));
       }
       const W = this.sim.world;
-      if (this.sim.scroll) {   // tiled, alternately mirrored stage background
-        for (let i = 0; i * 1280 < W.w; i++) this.add.image(i * 1280, 0, S.bg).setOrigin(0).setDisplaySize(1281, W.h).setFlipX(i % 2 === 1).setDepth(0);
+      if (this.sim.scroll) {   // v3: unique (never mirrored) chunked map + parallax sky/skyline
+        this.buildMap(stageId, W);
         this.drawExit(S);
       } else this.add.image(0, 0, S.bg).setOrigin(0).setDisplaySize(W.w, W.h).setDepth(0);
       const cam = this.cameras.main; cam.setBounds(0, 0, W.w, W.h); cam.setBackgroundColor('#0b0f1e');
@@ -43,7 +65,7 @@
       const x = S.exit + 40, y0 = S.band[0] - 10, g = this.add.graphics().setDepth(2);
       g.fillStyle(0x7dff8a, 0.10); g.fillRect(x - 70, y0 - 220, 140, S.band[1] - y0 + 220);
       g.lineStyle(4, 0x7dff8a, 0.7); g.strokeRect(x - 70, y0 - 220, 140, 220);
-      this.exitSign = this.add.text(x, y0 - 250, S.exitLabel + ' →', CO.style(26, '#7dff8a')).setOrigin(0.5).setDepth(3);
+      this.exitSign = this.add.text(x, S.band[1] - 26, S.exitLabel + ' →', CO.style(26, '#7dff8a')).setOrigin(0.5).setDepth(1.5);  // v3.1: on the floor, no longer over door signs
       this.tweens.add({ targets: this.exitSign, alpha: 0.45, duration: 600, yoyo: true, repeat: -1 });
     }
     gate(key, frames) { const f = this.sim.frame; if (this.textGate[key] && f - this.textGate[key] < frames) return false; this.textGate[key] = f; return true; }
@@ -52,6 +74,7 @@
     quit() { this.scene.stop('HUD'); this.scene.stop('Touch'); this.scene.stop(); this.scene.start('Title'); }
 
     update(time, delta) {
+      if (!this.sim) return;
       if (this.game.loop.actualFps) this.fpsLog.push(this.game.loop.actualFps);
       const intents = this.inputs.map(i => i.update());
       if (intents[0].p.pause && !this.ended) { this.scene.pause(); this.scene.pause('HUD'); this.scene.launch('Pause'); this.scene.bringToTop('Pause'); return; }
@@ -96,8 +119,7 @@
       let sx = sc * (1 - 0.42 * Math.sin(v.turn * Math.PI / 2)), sy = sc * (1 + bob) * (1 + 0.04 * v.turn);
       if (v.landT) { const k = Math.sin(v.landT / 8 * Math.PI) * 0.08; sx *= 1 + k; sy *= 1 - k; }
       let rot = (o.rot || 0) * (o.face < 0 ? -1 : 1);
-      if (o.kind === 'player' && o.state === 'run') rot += o.face * (o.runT < 8 ? 0.06 : 0.02) + Math.sin(o.runDist / 26) * 0.012;
-      if (o.kind === 'player' && o.stopT > 0) rot -= o.face * 0.05 * (o.stopT / 7);
+      // v3: run/skid/turn lean now comes from the art itself (real frames), no procedural rotation
       v.spr.setPosition(o.x, o.y - o.z - (o.bob || 0)).setRotation(rot).setScale(sx, sy).setDepth(o.y + (o.kind === 'player' ? 0.5 : 0));
       const shs = (o.w / 50) * Math.max(0.45, 1 - o.z / 500) * (o.kind === 'boss' ? 2.4 : 1.6) * this.charScale;
       v.sh.setPosition(o.x, o.y).setScale(shs, shs * 0.9).setAlpha(Math.max(0.3, 1 - o.z / 600));
@@ -269,8 +291,8 @@
       // portrait frame
       this.add.image(70, 70, c.portrait).setDisplaySize(104, 104);
       const fr = this.add.graphics(); fr.lineStyle(4, 0x6fd3ff); fr.strokeRoundedRect(18, 18, 104, 104, 10);
-      const nmT = this.add.text(136, 18, c.name, CO.style(28, '#ffffff'));
-      this.add.text(136 + nmT.width + 10, 27, '"' + c.title + '"', CO.style(15, '#9aa7c7'));
+      const nmT = this.add.text(136, 10, c.name, CO.style(28, '#ffffff'));
+      this.add.text(136 + nmT.width + 10, 17, '"' + c.title + '"', CO.style(15, '#9aa7c7'));
       this.hpT = this.add.text(452, 52, '', CO.style(15)).setOrigin(1, 0.5);
       this.mpT = this.add.text(452, 78, '', CO.style(13, '#cfe8ff')).setOrigin(1, 0.5);
       this.otT = this.add.text(136, 104, 'CLOCK-OUT', CO.style(14, '#ffd34d')).setOrigin(0, 0.5);
@@ -279,8 +301,8 @@
       this.hits = this.add.text(1250, 104, 'HITS', CO.style(30, '#6fd3ff')).setOrigin(1, 0).setVisible(false);
       this.otBadge = this.add.text(1250, 140, 'OVERTIME!', CO.style(40, '#ffc83d')).setOrigin(1, 0).setVisible(false);
       // top centre
-      this.floorT = this.add.text(640, 16, '', CO.style(20, '#ffffff')).setOrigin(0.5, 0);
-      this.clockT = this.add.text(640, 42, '', CO.style(22, '#ffd34d')).setOrigin(0.5, 0);
+      this.floorT = this.add.text(724, 16, '', CO.style(20, '#ffffff')).setOrigin(0.5, 0);
+      this.clockT = this.add.text(724, 42, '', CO.style(22, '#ffd34d')).setOrigin(0.5, 0);
       this.add.image(640 - 130, 54, 'ic_clock').setDisplaySize(26, 26).setVisible(false);
       // skills bar
       this.touch = CO.touchOn();
@@ -363,7 +385,7 @@
       this.bar(136, 44, 318, 18, p.hp / p.maxhp, p.hp < p.maxhp * 0.3 && Math.floor(t / 200) % 2 ? 0xff7a7a : 0xe8384f);
       this.bar(136, 72, 318, 12, p.mp / p.maxmp, 0x3fa8ff);
       const ready = p.ot >= 100;
-      this.bar(220, 98, 234, 12, p.ot / 100, ready ? (Math.floor(t / 120) % 2 ? 0xffffff : 0xffc83d) : 0xffc83d);
+      this.bar(236, 98, 218, 12, p.ot / 100, ready ? (Math.floor(t / 120) % 2 ? 0xffffff : 0xffc83d) : 0xffc83d);
       this.otT.setText(ready ? 'READY!' : 'CLOCK-OUT');
       this.hpT.setText(Math.ceil(p.hp) + ' / ' + p.maxhp); this.mpT.setText('CAFFEINE ' + Math.floor(p.mp));
       // combo

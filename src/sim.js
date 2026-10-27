@@ -93,18 +93,33 @@
         else if (take('heavy')) this.startMove(p, c.start.heavy);
         else {
           p.vx = mx * spd; p.vy = my * spd * 0.72;
+          const P = c.poses, moving = Math.abs(mx) + Math.abs(my) > 0.2;
+          if (p.wantFace && p.wantFace !== p.face && moving && p.runT >= (P.jogUntil || 22) && P.turn) { p.turnT = P.turnTicks || 5; p.runT = 14; }
           if (p.wantFace) p.face = p.wantFace;
-          const moving = Math.abs(mx) + Math.abs(my) > 0.2; p.state = moving ? 'run' : 'idle'; p.rot = 0; p.flip = false;
-          // run cycle advances by distance travelled (no foot-sliding at any speed), with a
-          // lean-in start pose and a short skid/settle pose when stopping from a full run
+          p.state = moving ? 'run' : 'idle'; p.rot = 0; p.flip = false;
+          // v3 run animation (visual only): accel start -> jog blend -> full 24-frame sprint (advances by
+          // distance, so no foot-sliding); analog sticks under walkBelow use the walk cycle; a hard
+          // direction reversal plays a turn frame; stopping from a sprint plays a 3-frame skid with a short slide.
           if (moving) {
-            p.runDist += Math.hypot(p.vx, p.vy * 1.25) * DT; p.runT++; p.stopT = 0;
-            const R = c.poses.run;
-            p.pose = p.runT < 5 && c.poses.runStart ? c.poses.runStart : R[Math.floor(p.runDist / (c.poses.runStride || 40)) % R.length];
+            const amag = Math.hypot(mx, my * 1.2);
+            p.runDist += Math.hypot(p.vx, p.vy * 1.25) * DT; p.stopT = 0;
+            const R = P.run;
+            if (p.turnT > 0) { p.turnT--; p.pose = P.turn[p.turnT > 2 ? 0 : 1]; }
+            else if (P.walk && amag < (P.walkBelow || 0.55)) { p.runT = Math.min(p.runT + 1, 12); p.pose = P.walk[Math.floor(p.runDist / P.walkStride) % P.walk.length]; }
+            else {
+              p.runT++;
+              const ss = P.startStep || 2;
+              if (P.start && p.runT <= P.start.length * ss) p.pose = P.start[Math.min(P.start.length - 1, Math.floor((p.runT - 1) / ss))];
+              else if (P.jog && P.jogStride && p.runT < (P.jogUntil || 22)) p.pose = P.jog[Math.floor(p.runDist / P.jogStride) % P.jog.length];
+              else p.pose = R[(Math.floor(p.runDist / (P.runStride || 40)) + (P.runOffset || 0)) % R.length];
+            }
           } else {
-            if (p.runT > 14 && c.poses.skid) p.stopT = 7;
-            p.runT = 0; p.runDist = 0;
-            if (p.stopT > 0) { p.stopT--; p.pose = c.poses.skid; } else p.pose = c.poses.idle;
+            if (p.runT >= (P.jogUntil || 22) && P.skid) p.stopT = P.skidTicks || 12;
+            p.runT = 0; p.runDist = 0; p.turnT = 0;
+            if (p.stopT > 0) {
+              const n = P.skid.length, k = Math.min(n - 1, Math.floor((P.skidTicks - p.stopT) / (P.skidTicks / n)));
+              p.pose = P.skid[k]; p.vx = p.face * S.speed * 0.5 * (p.stopT / P.skidTicks); p.stopT--;
+            } else p.pose = P.idle;
           }
         }
       } else if (p.state === 'air') {

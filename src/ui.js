@@ -2,7 +2,7 @@
 (function (CO) {
   const Q = new URLSearchParams(location.search);
   CO.params = { bot: Q.has('bot'), speed: Math.max(1, +Q.get('speed') || 1), god: Q.has('god'), skip: Q.has('skip'), seed: +Q.get('seed') || 0, touch: Q.get('touch'), boss: Q.has('boss'),
-    stage: Q.get('stage') || (Q.has('survival') ? 'survival' : null), players: +Q.get('players') || 1, chain: Q.has('chain') };
+    stage: Q.get('stage') || (Q.has('survival') ? 'survival' : null), players: +Q.get('players') || 1, chain: Q.has('chain'), cpu: Q.has('cpu') };
   const DEF = { music: 0.6, sfx: 0.8, touch: 'auto', shake: true };
   try { CO.settings = Object.assign({}, DEF, JSON.parse(localStorage.getItem('clockout.settings') || '{}')); } catch (e) { CO.settings = Object.assign({}, DEF); }
   CO.saveSettings = () => { try { localStorage.setItem('clockout.settings', JSON.stringify(CO.settings)); } catch (e) {} CO.audio.setVolumes(CO.settings.music, CO.settings.sfx); };
@@ -29,7 +29,9 @@
   };
   CO.startStage = (scene, id, extra = {}) => {
     const P = CO.save.progress(), i = CO.STORY_ORDER.indexOf(id), prev = i > 0 ? P.clocks[CO.STORY_ORDER[i - 1]] : 0;
-    scene.scene.start('Game', Object.assign({ stage: id, clock: Math.max(CO.STAGES[id].clock || 0, prev || 0) }, extra));
+    const data = Object.assign({ stage: id, clock: Math.max(CO.STAGES[id].clock || 0, prev || 0) }, extra), S = CO.STAGES[id];
+    // fresh Story entries (title / stage select / intro) go through HOW TO PLAY; Result->NEXT stage passes {pre:false}
+    CO.enterGame(scene, 'Game', data, { noHowTo: extra.pre === false, back: extra.back || 'StageSelect', label: 'Stage ' + S.num + ' — ' + S.name });
   };
   const unlock = () => { CO.audio.unlock(); };
   window.addEventListener('pointerdown', unlock); window.addEventListener('keydown', unlock); window.addEventListener('touchstart', unlock);
@@ -95,19 +97,23 @@
       this.add.image(640, 360, 'bg_title').setDisplaySize(1280, 720);
       const sh = this.add.graphics(); sh.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0, 0.85, 0); sh.fillRect(0, 280, 700, 440);
       CO.audio.play('title');
-      this.menu = new Menu(this, 250, 392, [
-        { label: 'STORY', sub: '(CLOCK IN)', size: 32, cb: () => this.go() },
-        { label: 'SURVIVAL', size: 30, cb: () => { this.cameras.main.fadeOut(250); this.time.delayedCall(270, () => this.scene.start('Game', { stage: 'survival' })); } },
-        { label: 'CO-OP 1-5', sub: '(coming soon)', size: 26, disabled: true },
-        { label: 'SETTINGS', size: 28, cb: () => { this.scene.pause(); this.scene.launch('Settings', { from: 'Title' }); } },
-      ], { w: 380, h: 54, gap: 12 });
+      this.menu = new Menu(this, 250, 330, [
+        { label: 'STORY', sub: '(CLOCK IN)', size: 30, cb: () => this.go() },
+        { label: 'STAGE SELECT', size: 24, cb: () => { this.cameras.main.fadeOut(250); this.time.delayedCall(270, () => this.scene.start('StageSelect')); } },
+        { label: 'SURVIVAL', size: 28, cb: () => { this.cameras.main.fadeOut(250); this.time.delayedCall(270, () => CO.enterGame(this, 'Game', { stage: 'survival' }, { back: 'Title', label: 'Survival — the Arena' })); } },
+        { label: 'CO-OP 1-5', sub: '(coming soon)', size: 24, disabled: true },
+        { label: 'HOW TO PLAY', size: 24, cb: () => this.scene.start('HowTo', { back: 'Title' }) },
+        { label: 'CONTROLS', sub: '(key binding)', size: 24, cb: () => this.scene.start('Controls', { back: { key: 'Title' } }) },
+        { label: 'SETTINGS', size: 24, cb: () => { this.scene.pause(); this.scene.launch('Settings', { from: 'Title' }); } },
+      ], { w: 380, h: 46, gap: 8 });
       const B = CO.save.best();
-      this.add.text(70, 668, (B.score ? 'SURVIVAL BEST: ' + B.score.toLocaleString() + ' pts · wave ' + B.wave + '   ·   ' : '') + (CO.isTouchDevice() ? 'Tap to choose.' : 'WASD/Arrows + Enter  ·  Gamepad OK'), CO.style(17, '#cfe8ff')).setOrigin(0, 0.5);
-      this.add.text(1265, 708, 'v2 · Story (5 stages) + Survival · Lemon', CO.style(14, '#9aa7c7')).setOrigin(1, 1);
+      this.add.text(70, 704, (B.score ? 'SURVIVAL BEST: ' + B.score.toLocaleString() + ' pts · wave ' + B.wave + '   ·   ' : '') + (CO.isTouchDevice() ? 'Tap to choose.' : 'WASD/Arrows + Enter  ·  Gamepad OK'), CO.style(17, '#cfe8ff')).setOrigin(0, 0.5);
+      this.add.text(1265, 708, 'v3.2 · Story (5 stages) + Survival · Lemon', CO.style(14, '#9aa7c7')).setOrigin(1, 1);
       this.cameras.main.fadeIn(400);
       this.events.on('resume', () => { CO.menuInput.update(); });
     }
-    go() { const P = CO.save.progress(); this.cameras.main.fadeOut(300); this.time.delayedCall(320, () => { if (!P.seenIntro) this.scene.start('Intro'); else this.scene.start('StageSelect'); }); }
+    // v3.2: STORY always plays the intro story (Esc / Skip leaves it); it used to jump straight to Stage Select once a save had seenIntro (any v2/v3 save) = 'the story is not there'
+    go() { this.cameras.main.fadeOut(300); this.time.delayedCall(320, () => this.scene.start('Intro')); }
     update() { this.menu.update(); }
   }
 
@@ -180,29 +186,31 @@
       this.title = this.add.text(640, 575, '', CO.style(42, '#ffd34d')).setOrigin(0.5);
       this.sub = this.add.text(640, 640, '', CO.style(24, '#ffffff', { strokeThickness: 4, align: 'center', wordWrap: { width: 1100 } })).setOrigin(0.5);
       this.hint = this.add.text(1260, 700, CO.isTouchDevice() ? 'Tap ▶' : 'Enter ▶   ·   Esc: skip', CO.style(18, '#9aa7c7')).setOrigin(1, 1);
-      this.i = -1; this.next(); CO.audio.play('title'); CO.menuInput.update();
-      this.input.on('pointerdown', () => this.next());
+      this.i = -1; this.fresh = new CO.Fresh(this, 300); this.next(); CO.audio.play('title'); CO.menuInput.update();
+      // v3.1: pointer/tap obeys the same gate as the keys (a tap from the previous screen can't skip a line)
+      this.input.on('pointerdown', () => { if (this.fresh.ok) this.press(); });
+      const sk = this.add.text(1262, 18, 'SKIP ▶▶', CO.style(20, '#cfe8ff')).setOrigin(1, 0).setInteractive({ useHandCursor: true }); sk.on('pointerdown', () => this.go());   // v3.2: tappable skip
       this.cameras.main.fadeIn(300);
     }
     next() {
       this.i++; const P = this.panels;
       if (this.i >= P.length) return this.go();
-      CO.audio.sfx(this.i === 0 ? 'tick' : 'ui');
+      CO.audio.sfx(this.i === 0 ? 'tick' : 'ui'); this.fresh.relock(300);   // input lock on every new line
       this.title.setText(P[this.i].t).setScale(0.6).setAlpha(0); this.tweens.add({ targets: this.title, scale: 1, alpha: 1, duration: 260, ease: 'Back.out' });
-      this.full = P[this.i].s; this.ch = 0; this.sub.setText('');
-      this.auto = this.time.now + (CO.params.speed > 1 ? 150 : 3200);
+      this.full = P[this.i].s; this.ch = 0; this.sub.setText(''); this.doneAt = 0;
       window.__cutscene = (this.d.scene || 'intro') + ':' + this.i;
     }
+    // first press completes the typewriter line, the next press advances
+    press() { if (this.leaving) return; if (this.ch < this.full.length) { this.ch = this.full.length; this.sub.setText(this.full); this.doneAt = performance.now(); this.fresh.relock(150); } else this.next(); }
     go() {
       if (this.leaving) return; this.leaving = true; CO.audio.sfx('bell'); this.cameras.main.fadeOut(400);
-      this.time.delayedCall(420, () => { if (this.d.next) this.scene.start(this.d.next, this.d.data); else { CO.save.markIntro(); CO.startStage(this, 's1'); } });
+      this.time.delayedCall(420, () => { if (this.d.next) this.scene.start(this.d.next, this.d.data); else { CO.save.markIntro(); if (CO.save.progress().unlocked > 1) this.scene.start('StageSelect'); else CO.startStage(this, 's1', { back: 'Title' }); } });
     }
     update(t) {
-      const I = CO.menuInput.update();
-      if (this.ch < this.full.length) { this.ch += CO.params.speed > 1 ? 99 : 1.2; this.sub.setText(this.full.slice(0, Math.floor(this.ch))); }
-      if (I.p.back) return this.go();
-      if (I.p.confirm) { if (this.ch < this.full.length) this.ch = this.full.length; else this.next(); }
-      if (t > this.auto && this.ch >= this.full.length) this.next();
+      const I = CO.menuInput.update(); this.fresh.poll(I);
+      if (this.ch < this.full.length) { this.ch += CO.params.speed > 1 ? 99 : 1.2; this.sub.setText(this.full.slice(0, Math.floor(this.ch))); if (this.ch >= this.full.length) this.doneAt = performance.now(); }
+      if (!this.leaving && this.fresh.ok) { if (I.p.back) return this.go(); if (I.p.confirm) this.press(); }
+      if (!this.leaving && this.ch >= this.full.length && this.doneAt && performance.now() - this.doneAt > (CO.params.speed > 1 ? 150 : 3200) && this.fresh.ok) this.next();
     }
   }
 
@@ -224,7 +232,7 @@
       ], { w: 420, align: 'center', onBack: resume });
       const tc = CO.touchOn();
       this.add.text(640, 600, tc ? 'Touch: left stick to move · ATK / HVY / JUMP / DASH · skill icons · CLOCK OUT when the gold bar is full'
-        : 'Move WASD/Arrows · Light J · Heavy K (hold to charge) · Jump Space · Dash L/Shift\nSkills U / I / O · Clock Out ; or P · Pause Esc   —   Pad: X / Y / A / B, LB RB LT, LB+RB', CO.style(17, '#9aa7c7', { align: 'center' })).setOrigin(0.5);
+        : 'Move ' + ['up', 'left', 'down', 'right'].map(a => CO.keyName(CO.binds.keys(0, a)[0])).join('') + ' · Light ' + CO.keyLabel(0, 'light') + ' · Heavy ' + CO.keyLabel(0, 'heavy') + ' (hold to charge) · Jump ' + CO.keyLabel(0, 'jump') + ' · Dash ' + CO.keyLabel(0, 'dash') + '\nSkills ' + ['s1', 's2', 's3'].map(a => CO.keyLabel(0, a)).join(' / ') + ' · Clock Out ' + CO.keyLabel(0, 'ult') + ' · Pause ' + CO.keyLabel(0, 'pause') + '   —   change keys: TITLE → CONTROLS', CO.style(17, '#9aa7c7', { align: 'center' })).setOrigin(0.5);
       this.events.on('resume', () => CO.menuInput.update());
     }
     update() { this.menu.update(); }
@@ -282,7 +290,7 @@
       this.time.delayedCall(r.quick ? 50 : 1800, () => this.review());
       CO.menuInput.update();
     }
-    next(id) { CO.startStage(this, id, { stats: null }); }
+    next(id) { CO.startStage(this, id, { stats: null, pre: false }); }
     spare(r) { const m = 20 * 60 - (r.clockH * 60 + r.clockM); return m >= 60 ? Math.floor(m / 60) + 'h ' + String(m % 60).padStart(2, '0') + 'm' : m + ' min'; }
     review() {
       const r = this.r, X = 880, Y = 150;
