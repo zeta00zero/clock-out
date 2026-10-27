@@ -42,35 +42,31 @@ window.CO = window.CO || {};
       arc: [-20, 20], next: { light: 'l2' }, cancel: 14, sfx: 'swing' },
   };
 
+  CO.prepMoves(LEMON_MOVES, 'lem_', 1.26);
+
   const LEMON_SKILLS = [
-    { id: 'coffee', name: 'Coffee Rush', icon: 'ic_coffee', cost: 30, cd: 9, pose: 'drink', total: 38,
+    { id: 'coffee', name: 'Coffee Rush', icon: 'ic_coffee', cost: 30, cd: 9, pose: 'lem_drink', total: 38,
       heal: 70, buff: 8, desc: 'Speed + attack speed, small heal' },
-    { id: 'staples', name: 'Staple Barrage', icon: 'ic_stapler', cost: 22, cd: 3.5, pose: 'cannon', total: 40,
+    { id: 'staples', name: 'Staple Barrage', icon: 'ic_stapler', cost: 22, cd: 3.5, pose: 'lem_cannon', total: 40,
       fire: { from: 8, count: 9, every: 2, spread: 0.55, speed: 1150, life: 32, dmg: 15, stun: 50 }, desc: 'Fan of staples that pin enemies' },
-    { id: 'briefcase', name: 'Briefcase Spin', icon: 'ic_briefcase', cost: 32, cd: 6, pose: 'throw', total: 30,
+    { id: 'briefcase', name: 'Briefcase Spin', icon: 'ic_briefcase', cost: 32, cd: 6, pose: 'lem_throw', total: 30,
       case: { at: 10, out: 26, back: 26, speed: 640, every: 8, dmg: 12, pull: 260, r: 85 }, desc: 'Boomerang briefcase that drags enemies in' },
   ];
 
   CO.CHARACTERS = CO.CHARACTERS || {};
   CO.CHARACTERS.lemon = {
-      id: 'lemon', name: 'LEMON', portrait: 'portrait_lemon', scale: 1.0,
-      title: 'Hate My Job', weapon: 'Heavy-Duty Stapler 9000',
+      id: 'lemon', name: 'LEMON', portrait: 'portrait_lemon', scale: 1.0, key: 'lem',
+      title: 'Hate My Job', mpName: 'CAFFEINE', otName: 'CLOCK-OUT', weapon: 'Heavy-Duty Stapler 9000',
       stats: { hp: 520, mp: 100, mpRegen: 3.5, speed: 285, dash: 760, jump: 680, w: 34 },
-      poses: { idle: 'idle',
-        // v3: 24 real, distinct run frames (art, no tweens), phase-ordered; one frame per runStride px travelled
-        run: ['run01', 'run02', 'run03', 'run04', 'run05', 'run06', 'run07', 'run08', 'run09', 'run10', 'run11', 'run12',
-          'run13', 'run14', 'run15', 'run16', 'run17', 'run18', 'run19', 'run20', 'run21', 'run22', 'run23', 'run24'],
-        // v3.1: the 24 frames are a rig-drawn two-leg gait (tools/runrig.py). One cycle (2 steps) = 24 frames = ~200 world px
-        // (stance foot speed == ground speed, no sliding) -> ~2.85 steps/s at full speed. Starts on the passing pose (runOffset).
-        runStride: 8.3, runOffset: 4, jogUntil: 22,                  // jogUntil = ticks of running before skid/turn frames apply
-        walk: ['wk1', 'wk2', 'wk4', 'wk5', 'wk6', 'wk8'], walkStride: 15, walkBelow: 0.55, // analog stick below 55%
-        skid: ['sk1', 'sk2', 'sk3'], skidTicks: 12,                  // stop from a full run
-        turn: ['sk6', 'sk5'], turnTicks: 5,                          // reverse direction while running
-        hurt: 'hurt', down: 'down', victory: 'victory',
-        rise: 'uppercut', fall: 'airslam', dash: 'dash', joy: 'runjoy' },
+      poses: { idle: 'lem_idle',
+        // v4: 24 rig-drawn run frames at the new 240 px size (tools/runrig4.py). One cycle (2 steps) = 24 frames; stride from the rig (stance foot == ground speed).
+        run: Array.from({ length: 24 }, (_, i) => 'lem_run' + String(i + 1).padStart(2, '0')),
+        runStride: 8.64, runOffset: 4, jogUntil: 0,
+        hurt: 'lem_hurt', down: 'lem_down', victory: 'lem_victory',
+        rise: 'lem_uppercut', fall: 'lem_airslam', dash: 'lem_dash', joy: 'lem_runjoy' },
       moves: LEMON_MOVES, start: { light: 'l1', heavy: 'h1', air: 'air1', airHeavy: 'dive', dashLight: 'commute' },
       skills: LEMON_SKILLS,
-      ult: { id: 'clockout', name: 'Clock Out', icon: 'ic_clock', pose: 'victory', total: 100, at: 70, dmg: 260, bossDmg: 320 },
+      ult: { id: 'clockout', name: 'Clock Out', icon: 'ic_clock', pose: 'lem_victory', total: 100, at: 70, dmg: 260, bossDmg: 320 },
       lines: { ult: ["I'm clocking out.", 'Not my job.', 'Shift: ENDED.'], hurt: ['Ugh.', 'Seriously?'], win: 'Bye.' },
       color: 0xffd23f,
   };
