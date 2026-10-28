@@ -1,4 +1,16 @@
-CLOCK OUT!  —  An Arcane Duel Chronicles Story   (v4.2: new fighter KEITH, wall/floor layers, rebuilt apartment, wall-safe walk band, double jump; v4.1: layered parallax maps; v4: 7 stages, anime map plates, Weisheng, local co-op, phone-throw intro)
+CLOCK OUT!  —  An Arcane Duel Chronicles Story   (v5: Story / Survival / Settings menus, ONLINE co-op, 100-level Survival with Boss Rush, new fighter WEI YAO, per-character stories)
+
+WHAT'S NEW IN v5
+  MENU      STORY MODE (Start/Continue with character select, Stage Select, Co-op LOCAL or ONLINE) · SURVIVAL MODE (Single with level select,
+            Co-op ONLINE or LOCAL) · SETTINGS (How to Play, Key Binding, Audio/Touch/Effects). Esc / Back works on every page.
+  ONLINE    STORY or SURVIVAL -> CO-OP -> ONLINE. HOST A ROOM gives a 6-character code (COPY / SHARE CODE); friends pick JOIN WITH CODE.
+            Up to 5 players, each on a different fighter while one is free. Everyone presses READY, the host picks the mode and stage/level and presses START.
+            The host runs the game; others see it live (works on phones). If a player drops, a CPU takes over their fighter; if the host
+            leaves, everyone returns to the menu. Online needs internet (PeerJS cloud server). Some strict NAT / office firewalls can block it -
+            try another network or add ?relay=1 to the address. Offline / file:// play is unaffected.
+  SURVIVAL  100 levels, a boss every 10, Level 100 = BOSS RUSH (all bosses back to back, refills between). Breaks heal and drop an item.
+            Your best level is saved; start from any level you've reached. Scales with co-op players.
+  WEI YAO   Player 4 fighter with her own story; Weisheng ("Home by 7:30") and Keith ("Game Night, Bro") stories too. In co-op, Lemon's story leads.
 
 HOW TO PLAY
   Unzip, then double-click index.html (Chrome, Edge, Firefox or Safari). No server or internet needed.
