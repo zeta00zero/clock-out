@@ -1,4 +1,14 @@
-CLOCK OUT!  —  An Arcane Duel Chronicles Story   (v5: Story / Survival / Settings menus, ONLINE co-op, 100-level Survival with Boss Rush, new fighter WEI YAO, per-character stories)
+CLOCK OUT!  —  An Arcane Duel Chronicles Story   v5.2   (v5: Story / Survival / Settings menus, ONLINE co-op, 100-level Survival with Boss Rush, new fighter WEI YAO, per-character stories)
+
+WHAT'S NEW IN v5.2
+  ONLINE    Smoother co-op for joining players: the host now sends at a fixed ~30 Hz (motion on an unordered channel, events/state on a
+            reliable one, compact delta updates with a full refresh every ~1 s); other fighters are shown ~100 ms in the past and
+            interpolated; your own fighter moves, jumps, double-jumps and starts attacks/skills instantly on your screen (hits are still
+            decided by the host) and is gently corrected if it drifts. Version tag clockout-v5.2 (v5.1 rooms can't mix with v5.2).
+  STORY     Cutscene AUTO-ADVANCE toggle: AUTO ON/OFF button next to SKIP, key A, or gamepad Y; also SETTINGS -> STORY AUTO-ADVANCE
+            (saved, default ON). With AUTO OFF each line waits for Enter / click / tap (a blinking > shows it is ready; the first press
+            finishes a line still typing). Covers the intro, mid-story cutscenes and endings for all four fighters. Online: the host's
+            setting is used, and with AUTO OFF any player's confirm turns the page for everyone.
 
 WHAT'S NEW IN v5
   MENU      STORY MODE (Start/Continue with character select, Stage Select, Co-op LOCAL or ONLINE) · SURVIVAL MODE (Single with level select,
