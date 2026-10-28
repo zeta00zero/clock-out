@@ -46,3 +46,5 @@ DEBUG URL OPTIONS  (add to index.html?...)
   bot    autoplay   speed=2..8   boss   god   chain   touch=on|off   fx=low|high   nointro   noflash
 
 FILES  maps/ holds the per-stage map art (loaded on demand, keep it next to index.html).
+
+v4.3 (2026-10-28): Lift doors are now a front layer. Players board the lobby lift through the opening, the doors slide shut behind them, and they step out of the cab door. Zombies walk out of the lift doorway in the cab fight and in Survival: The Lift.
