@@ -1,4 +1,4 @@
-CLOCK OUT!  —  An Arcane Duel Chronicles Story   (v4: 7 stages, anime map plates, Weisheng, local co-op, phone-throw intro)
+CLOCK OUT!  —  An Arcane Duel Chronicles Story   (v4.1: layered parallax maps; v4: 7 stages, anime map plates, Weisheng, local co-op, phone-throw intro)
 
 HOW TO PLAY
   Unzip, then double-click index.html (Chrome, Edge, Firefox or Safari). No server or internet needed.
