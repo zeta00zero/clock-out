@@ -21,7 +21,7 @@
         const cp = typeof opts.checkpoint === 'number' ? opts.checkpoint : -1;
         if (cp >= 0) { this.enc = cp - 1; this.scrollMin = Math.max(0, S.encounters[cp].x - 1100); this.A.x0 = this.scrollMin + 40; this.A.x1 = this.scrollMin + 1240; }
       } else { this.world = this.stage.world; this.A = Object.assign({}, this.stage.arena); }
-      this.surv = { wave: 0 }; this.score = opts.score || 0; this.hpMul = 1; this.dmgMul = 1;
+      this.surv = { wave: 0, level: 0, start: Math.max(1, Math.min(100, opts.level || 1)) }; this.spdMul = 1; this.eliteP = 0; this.score = opts.score || 0; this.hpMul = 1; this.dmgMul = 1;
       this.clockRate = this.mode === 'survival' ? 20 : 3;   // v4: story clock 3 game-sec per sec so 7 stages fit 5:59 -> ~7:50 PM
       this.players = []; this.enemies = []; this.projs = []; this.hazards = []; this.pickups = [];
       this.boss = null; this.zones = []; this.lures = []; this.allies = []; this.cd = 0; this.events = []; this.frame = 0; this.hitstop = 0; this.timeStop = 0; this.slowmo = 0;
@@ -50,8 +50,8 @@
     step(intents) {
       this.events.length = 0;
       if (this.hitstop > 0) { this.hitstop--; return; }
-      this.frame++; this.stats.frames++;
-      if (this.state !== 'clear' && this.state !== 'failed') this.gameSec += this.clockRate * DT;
+      this.frame++; this.stats.frames++; if (this.allBeatT > 0) this.allBeatT--;
+      if (this.state !== 'clear' && this.state !== 'failed' && this.state !== 'won') this.gameSec += this.clockRate * DT;
       this.players.forEach((p, i) => this.updatePlayer(p, p.auto ? this.autoIntent(p) : (intents[i] || CO.emptyIntent())));
       if (this.timeStop > 0) { this.timeStop--; } else {
         this.updateAuras();
@@ -75,6 +75,7 @@
       p.stillT = (p.state === 'idle' && Math.abs(it.mx) < 0.2 && Math.abs(it.my) < 0.2) ? (p.stillT || 0) + 1 : 0;
       p.mp = Math.min(p.maxmp, p.mp + S.mpRegen * DT * (PV.napAfter && p.stillT >= PV.napAfter ? PV.napMul : 1));
       if (p.shieldT > 0 && --p.shieldT <= 0) p.shield = 0;
+      if (p.wallT > 0) p.wallT--;
       if (p.atkUpT > 0) p.atkUpT--;
       p.cds = p.cds.map(v => Math.max(0, v - DT));
       if (p.buff > 0) p.buff -= DT;
@@ -135,6 +136,7 @@
         p.pose = p.vz > 0 ? c.poses.rise : c.poses.fall; p.rot = p.vz > 0 ? 0 : 0.15; p.flip = false;
         if (take('light') && p.airChain < 6) this.startMove(p, c.start.air);
         else if (take('heavy')) this.startMove(p, c.start.airHeavy);
+        else if (c.skills.some((sk, i) => sk.air && p.buf['s' + (i + 1)] > 0 && p.mp >= sk.cost && p.cds[i] <= 0)) { const i = c.skills.findIndex((sk, i) => sk.air && p.buf['s' + (i + 1)] > 0 && p.mp >= sk.cost && p.cds[i] <= 0); take('s' + (i + 1)); this.startSkill(p, i); p.vz = Math.max(p.vz, 200); }
         else if (c.passive && c.passive.airDash && !p.airDashed && take('dash')) { p.airDashed = true; this.startDash(p); p.vz = 0; }
         // v4.2: DOUBLE JUMP, generic for every character (stats.airJumps default 1, stats.jump2 default 85% of jump); once per airtime, reset on landing
         else if ((p.airJumps || 0) < (S.airJumps == null ? 1 : S.airJumps) && take('jump')) {
@@ -216,6 +218,7 @@
       if (f >= m.cancel) {
         if (m.next.light && take('light')) { if (this.startMove(p, m.air && p.z <= 0 ? c.start.light : m.next.light)) return; }
         if (m.next.heavy && take('heavy')) { if (this.startMove(p, m.next.heavy)) return; }
+        if (m.jumpCancel && f > m.active[1] && take('jump')) { p.move = null; p.state = 'air'; p.st = 0; p.vz = p.char.stats.jump; p.airChain = 0; p.rot = 0; this.ev({ t: 'sfx', s: 'jump' }); return; }
         if (p.z > 0 && m.air === undefined && take('light')) { this.startMove(p, c.start.air); return; }
         if (tryGeneric(false)) return;
       }
@@ -255,6 +258,7 @@
       if (e.state === 'dead') return;
       let dmg = o.dmg * (p && p.overtime ? 1.25 : 1) * (p && p.buff > 0 ? (p.char.buffMul ? p.char.buffMul.dmg : 1.1) : 1) * (p && p.atkUpT > 0 ? (p.atkUpMul || 1.25) : 1);
       if (p && p.char.passive && p.char.passive.catAtk) dmg *= 1 + p.char.passive.catAtk * this.allies.filter(a => a.owner === p).length;
+      if (p && p.kind === 'player') dmg *= this.onBeat(p, e);   // v5 Wei Yao: On Beat x1.5 (also team-wide during Prism Center Live!)
       if (e.def.kbResist && e.kind === 'enemy') o = Object.assign({}, o, { kb: o.kb * (1 - e.def.kbResist) });
       // v4 frontal blockers (WFH laptop 50%, Umbrella 70%): hit them from behind or with guard-breakers
       if (e.def.block && e.kind === 'enemy' && !o.breaksGuard && e.state !== 'air' && e.state !== 'down' && e.z <= 0 && sign((p ? p.x : o.from) - e.x) === e.face) {
@@ -303,6 +307,25 @@
       if (e.hp <= 0) this.killEnemy(e, p);
     }
 
+    // v5: 120 BPM metronome (30 frames per beat at 60 fps); +-80 ms = +-5 frames
+    beatOff() { const k = this.frame % 30; return Math.min(k, 30 - k); }
+    onBeat(p, e) {
+      const OB = p.char.passive && p.char.passive.onbeat;
+      if (!OB && !(this.allBeatT > 0)) return 1;
+      const on = this.allBeatT > 0 || this.beatOff() <= Math.round((OB ? OB.window : 80) / 1000 * 60);
+      if (!on) { if (OB) p.beatChain = 0; return 1; }
+      if (this.frame - (p.beatF || -99) >= 3) { this.ev({ t: 'onbeat', p: p.id, x: e.x, y: e.y, z: (e.z || 0) + 170 }); p.beatF = this.frame; if (OB) this.beatHit(p, 1); }
+      if (OB && OB.refund) { p.airJumps = 0; p.airDashed = false; }
+      return OB ? OB.mult : 1.5;
+    }
+    beatHit(p, n) {
+      const F = p.char.passive.onbeat.fever; p.beatChain = (p.beatChain || 0) + n;
+      if (p.beatChain >= F.hits) {
+        p.beatChain = 0; this.ev({ t: 'text', x: p.x, y: p.y, z: 260, msg: 'FEVER!', col: '#ffd678' }); this.ev({ t: 'sfx', s: 'buff' });
+        for (const o of this.players) if (o.alive) { if (!(o.atkUpT > 0) || (o.atkUpMul || 1) <= F.mul) { o.atkUpMul = F.mul; } o.atkUpT = Math.max(o.atkUpT || 0, F.T); this.ev({ t: 'buff', p: o.id, x: o.x, y: o.y, idol: true }); }
+      }
+    }
+
     comboHit(p) {
       if (!p) return;
       p.combo++; p.comboT = p.overtime ? 190 : 150;
@@ -326,6 +349,7 @@
     hurtPlayer(p, dmg, kb, from, knockdown, stunF) {
       if (!p.alive || p.iframes > 0 || p.state === 'ult' || p.state === 'dash' || p.state === 'down') return false;
       if (this.god) dmg = 0;
+      if (p.wallT > 0 && sign(from - p.x) === p.wallFace) { if (this.frame - (p.wallBlk || -99) > 12) { p.wallBlk = this.frame; this.ev({ t: 'block', x: p.x + p.wallFace * 60, y: p.y, z: 150, msg: 'CONFETTI WALL' }); } return false; }   // v5 Wei Yao S3
       if (p.shieldT > 0 && p.shield > 0) {   // Keith S3 Nine Lives shield
         const ab = Math.min(p.shield, dmg); p.shield -= ab; dmg -= ab;
         if (p.shield <= 0) { p.shieldT = 0; this.ev({ t: 'text', x: p.x, y: p.y, z: 170, msg: 'SHIELD POP', col: '#d6b8ff', small: true }); }
@@ -367,6 +391,33 @@
       const sk = p.skill; p.mt += aspd; const f = Math.floor(p.mt), pf = Math.floor(p.prevMt); p.prevMt = p.mt;
       p.vx *= 0.75; p.vy *= 0.75; p.pose = sk.pose;
       if (sk.id === 'coffee' && f >= 18 && pf < 18) { p.hp = Math.min(p.maxhp, p.hp + sk.heal); p.buff = sk.buff; this.ev({ t: 'buff', p: p.id, x: p.x, y: p.y }); }
+      if (sk.id === 'encore' && f >= sk.at && pf < sk.at) {   // v5 Wei Yao S1: spotlight heal per zombie + ally ATK
+        const inR = o => Math.abs(o.x - p.x) <= sk.r && Math.abs(o.y - p.y) <= sk.r * 0.6;
+        let n = this.enemies.filter(e => e.state !== 'dead' && inR(e)).length + (this.boss && this.boss.state !== 'dead' && inR(this.boss) ? 1 : 0); n = Math.min(n, sk.max);
+        if (n > 0) { p.hp = Math.min(p.maxhp, p.hp + sk.heal * n); this.ev({ t: 'text', x: p.x, y: p.y, z: 230, msg: '+' + sk.heal * n + ' HP', col: '#9dffb0' }); }
+        for (const o of this.players) if (o.alive && inR(o)) { o.atkUpT = sk.atk.T; o.atkUpMul = sk.atk.mul; this.ev({ t: 'buff', p: o.id, x: o.x, y: o.y, idol: true }); }
+        this.ev({ t: 'spot', x: p.x, y: p.y, r: sk.r, n }); this.ev({ t: 'sfx', s: 'buff' });
+      }
+      if (sk.id === 'centerspin') {   // v5 Wei Yao S2: 4 hits, pull in, last hit launches
+        p.vx *= 0.5; if (p.z > 0) p.vz = Math.max(p.vz, -60);
+        for (let k = 0; k < sk.hits; k++) {
+          const at = sk.at + k * sk.every;
+          if (f >= at && pf < at) {
+            const last = k === sk.hits - 1; this.ev({ t: 'swing', p: p.id, move: 'centerspin', x: p.x, y: p.y, z: p.z, face: p.face, spin: true, arc: [-180, 180] });
+            const T = this.enemies.filter(e => e.state !== 'dead' && e.state !== 'enter2'); if (this.boss && this.boss.state !== 'dead' && this.boss.state !== 'intro') T.push(this.boss);
+            for (const e of T) if (Math.abs(e.x - p.x) <= sk.r + e.w && Math.abs(e.y - p.y) <= sk.r * 0.45 && Math.abs((e.z || 0) - p.z) < 200) {
+              if (e.kind === 'enemy') { e.x += (p.x - e.x) * 0.35; e.y += (p.y - e.y) * 0.35; }
+              this.damage(e, p, { dmg: sk.dmg, kb: last ? 120 : 10, stun: 30, launch: last ? sk.launch : 0, juggle: 420, from: p.x, castId: p.castId, heavy: last });
+            }
+            this.hitstop = Math.max(this.hitstop, 2);
+          }
+        }
+      }
+      if (sk.id === 'confetti' && f >= sk.at && pf < sk.at) {   // v5 Wei Yao S3: frontal barrier, counts as 2 on-beat hits
+        p.wallT = sk.T; p.wallFace = p.face; this.ev({ t: 'wall', p: p.id, x: p.x, y: p.y, face: p.face, T: sk.T });
+        for (const q of this.projs) if (q.owner !== p && !q.owner && sign(q.x - p.x) === p.face && Math.abs(q.x - p.x) < 260) q.life = 0;
+        if (p.char.passive.onbeat) this.beatHit(p, sk.beats);
+      }
       if (sk.id === 'staples') {
         const F = sk.fire;
         for (let k = 0; k < F.count; k++) {
@@ -435,7 +486,7 @@
         }
         this.ev({ t: 'sfx', s: 'ding' });
       }
-      if (p.mt >= sk.total) { p.state = 'idle'; p.st = 0; p.rot = 0; }
+      if (p.mt >= sk.total) { p.state = p.z > 0 ? 'air' : 'idle'; p.st = 0; p.rot = 0; }
     }
 
     // ---------- Keith: laser lures + holo catgirl allies ----------
@@ -485,6 +536,7 @@
         for (const e of this.enemies) if (e.state !== 'dead') { this.damage(e, p, { dmg: u.dmg, kb: u.kb || 300, launch: u.launch || 700, from: p.x, heavy: true }); }
         if (this.boss && this.boss.state !== 'dead' && this.boss.state !== 'intro') this.damage(this.boss, p, { dmg: u.bossDmg, kb: 0, from: p.x, heavy: true, stampText: u.stamp || 'CLOCKED OUT' });
         if (u.charm) for (const e of this.enemies) if (e.state !== 'dead' && e.hp > 0) { e.state = 'stun'; e.stun = u.charm; e.st = 0; e.vx = e.vy = 0; e.charmT = u.charm; this.ev({ t: 'charm', x: e.x, y: e.y }); }
+        if (u.allOnBeat) { this.allBeatT = u.allOnBeat; this.ev({ t: 'text', x: p.x, y: p.y, z: 280, msg: 'EVERY HIT ON BEAT!', col: '#ffd678' }); }
         if (u.teamAtk) for (const o of this.players) if (o.alive) { o.atkUpT = u.teamAtk.T; o.atkUpMul = u.teamAtk.mul; this.ev({ t: 'buff', p: o.id, x: o.x, y: o.y, idol: true }); }
         this.ev({ t: 'ult_hit', p: p.id, char: p.char.id }); this.ev({ t: 'shake', a: 0.02, d: 400 });
       }
@@ -509,6 +561,8 @@
         hp, maxhp: hp, state: 'enter', st: 0, cd: 40 + this.r(0, 60), w: d.w, guard: d.guard || 0, shieldDown: 0, flash: 0,
         slotY: this.r(-28, 28), pose: d.frames.walk, rot: 0, barkT: this.r(200, 900) };
       if (door) { e.door = door; e.face = -1; }
+      if (this.spdMul !== 1) e.def = Object.assign({}, d, { speed: d.speed * this.spdMul });
+      if (this.eliteP && type !== 'speaker' && this.rng() < this.eliteP) { e.elite = true; e.hp *= 2; e.maxhp *= 2; e.def = Object.assign({}, e.def, { speed: e.def.speed * 1.12 }); }   // v5 survival elites (gold)
       this.enemies.push(e); return e;
     }
 
@@ -999,7 +1053,7 @@
     director() {
       this.st++;
       if (this.slowmo > 0) this.slowmo--;
-      if (this.state !== 'failed' && this.state !== 'clear' && this.players.length && this.alivePlayers().length === 0) {
+      if (this.state !== 'failed' && this.state !== 'clear' && this.state !== 'won' && this.players.length && this.alivePlayers().length === 0) {
         this.state = 'failed'; this.st = 0; this.ev({ t: 'failed', mode: this.mode }); return;
       }
       if (this.mode === 'survival') return this.dirSurvival();
@@ -1126,51 +1180,74 @@
       this.ev({ t: 'bossintro', name: b.def.name, text: en.bossText });
     }
 
-    // Survival: endless escalating waves, a boss every N waves, score + best (saved by the UI).
+    // v5 Survival: 100 numbered levels. 1-99 = cleared wave sets (boss every 10th), 100 = BOSS RUSH (every boss, one at a time).
     dirSurvival() {
       const S = this.stage, V = this.surv;
       if (this.state === 'start') {
-        if (this.st === 1) this.ev({ t: 'card', title: 'SURVIVAL: ' + S.arenaName, sub: S.liftArena ? 'ENDLESS RUSH HOUR' : 'ENDLESS OVERTIME', lines: [S.liftArena ? 'The doors keep opening. The lift never stops.' : 'How long can the office hold you before it wins?', 'Boss review every ' + S.bossEvery + ' waves.'] });
-        if (this.st >= 150) this.survNext();
+        if (this.st === 1) { const L = V.start; this.ev({ t: 'card', title: 'SURVIVAL: ' + S.arenaName, sub: L >= 100 ? 'LEVEL 100 — BOSS RUSH' : 'LEVEL ' + L + ' / 100', lines: [L >= 100 ? 'Every boss in the building. One at a time. No breaks for lunch.' : S.liftArena ? 'The doors keep opening. The lift never stops.' : 'Clear 100 levels of overtime. Level 100 is the Boss Rush.', 'A boss every 10 levels.'] }); }
+        if (this.st >= 150) this.survNext(V.start);
       } else if (this.state === 'wave') {
         this.spawnTick(V.max);
         if (!this.queue.length && this.enemies.length === 0) this.survCleared();
       } else if (this.state === 'between') {
-        if (this.st >= 110) this.survNext();
+        if (this.st >= (V.breakT || 150)) { if (V.level % 10 === 0 && V.level < 100 && CO.survArenaFor && CO.survArenaFor(V.level + 1) !== S.id && !V.arenaEv) { V.arenaEv = true; this.ev({ t: 'survArena', next: CO.survArenaFor(V.level + 1), level: V.level + 1 }); } else if (!V.arenaEv) this.survNext(V.level + 1); }
       } else if (this.state === 'bossIntro') {
         if (this.boss.state !== 'intro') { this.state = 'boss'; this.st = 0; }
       } else if (this.state === 'boss') {
-        this.spawnTick(6);
+        this.spawnTick(V.rush ? 0 : 5);
         if (this.boss.state === 'dead') { this.state = 'bossDown'; this.st = 0; }
       } else if (this.state === 'bossDown') {
         if (this.st === 60) this.ev({ t: 'bark', x: this.boss.x, y: this.boss.y, z: 330, msg: this.boss.def.defeat[1], boss: true });
-        if (this.st >= 140) { this.boss = null; this.survCleared(); }
+        if (this.st >= 140) {
+          this.boss = null; this.enemies.length = 0; this.queue = [];
+          if (V.rush) { V.rushI++; if (V.rushI < V.rushList.length) { this.heal(0.4); this.state = 'rushBreak'; this.st = 0; this.ev({ t: 'waveclear', wave: V.level, surv: true, rush: V.rushI, of: V.rushList.length }); } else { this.state = 'won'; this.st = 0; V.won = true; this.score += 25000; this.ev({ t: 'survwin', level: 100, score: this.score }); } }
+          else this.survCleared();
+        }
+      } else if (this.state === 'rushBreak') {
+        if (this.st >= 170) this.rushBoss();
       }
     }
+    heal(f) { for (const p of this.alivePlayers()) { p.hp = Math.min(p.maxhp, p.hp + p.maxhp * f); p.mp = Math.min(p.maxmp, p.mp + p.maxmp * 0.5); } }
     survCleared() {
-      const V = this.surv; this.score += 400 * V.wave; V.best = Math.max(V.best || 0, V.wave);
-      for (const p of this.alivePlayers()) p.hp = Math.min(p.maxhp, p.hp + p.maxhp * 0.12);
-      this.state = 'between'; this.st = 0; this.ev({ t: 'waveclear', wave: V.wave, surv: true });
+      const V = this.surv; this.score += 300 * V.level; V.best = Math.max(V.best || 0, V.level); V.wave = V.level;
+      this.heal(V.level % 10 === 0 ? 0.5 : 0.15);
+      { const cx = (this.A.x0 + this.A.x1) / 2, cy = (this.A.y0 + this.A.y1) / 2; this.pickups.push({ id: this.nextId++, type: V.level % 10 === 0 || V.level % 3 === 0 ? 'donut' : 'bean', x: cx, y: cy, t: 0 }); }   // break item
+      V.breakT = V.level % 10 === 0 ? 200 : 140;
+      this.state = 'between'; this.st = 0; this.ev({ t: 'waveclear', wave: V.level, surv: true, level: V.level });
     }
-    survNext() {
-      const S = this.stage, V = this.surv, w = ++V.wave;
-      this.hpMul = 1 + 0.07 * (w - 1); this.dmgMul = 1 + 0.035 * (w - 1);
-      if (w % S.bossEvery === 0 || (S.bossAt && S.bossAt[w])) {
-        const id = (S.bossAt && S.bossAt[w]) || S.bossRotation[(w / S.bossEvery - 1) % S.bossRotation.length];
+    levelPlan(L) {   // pure function of L (and the rng for the mix) so host / tests / docs agree
+      const ORDER = ['shambler', 'commuter', 'intern', 'salesman', 'hr', 'replyall', 'penner', 'smoker', 'printer', 'itguy', 'sniper', 'spiller', 'guard', 'recept', 'wfh', 'roller', 'kbwar', 'presenter', 'bluescr', 'valet', 'washer', 'delivery', 'laundry', 'umbrella', 'courier', 'salaryman'];
+      const types = ORDER.filter((t, i) => CO.ENEMIES[t] && L >= 1 + i * 3);
+      return { types, total: Math.round(4 + L * 0.2), max: Math.min(12, 4 + Math.floor(L / 9)), hpMul: 1 + 0.018 * (L - 1) + 0.02 * Math.max(0, L - 60), dmgMul: 1 + 0.011 * (L - 1) + 0.015 * Math.max(0, L - 60), spdMul: 1 + 0.0025 * (L - 1), eliteP: L < 15 ? 0 : Math.min(0.35, (L - 15) * 0.0042), speakers: L >= 20 && L % 3 === 0 ? 1 + (L >= 60 ? 1 : 0) : 0 };
+    }
+    survNext(L) {
+      const S = this.stage, V = this.surv; V.level = L; V.wave = L - 1; V.arenaEv = false;
+      const P = this.levelPlan(L); this.hpMul = P.hpMul; this.dmgMul = P.dmgMul; this.spdMul = P.spdMul; this.eliteP = P.eliteP;
+      if (L >= 100) {   // BOSS RUSH
+        V.rush = true; V.rushI = 0; V.rushList = CO.BOSS_RUSH || Object.keys(CO.BOSSES); this.hpMul = 1.35; this.dmgMul = 1.6; this.spdMul = 1; this.eliteP = 0;
+        this.ev({ t: 'wave', n: 100, of: 0, text: 'BOSS RUSH — ' + V.rushList.length + ' bosses, back to back.', surv: true, level: 100 });
+        this.rushBoss(); return;
+      }
+      if (L % 10 === 0) {
+        const ROT = ['micromanager', 'muzak', 'hrdirector', 'printerboss', 'landlord', 'ceo'], id = ROT[(L / 10 - 1) % ROT.length];
+        this.hpMul = 1 + 0.011 * (L - 1) + 0.015 * Math.max(0, L - 60); this.dmgMul = P.dmgMul;
         this.state = 'bossIntro'; this.st = 0; this.queue = [];
-        const b = this.spawnBoss(id, S.liftArena ? 'l' : (this.rng() < 0.5 ? 'l' : 'r'), id === 'ceo' ? ['Overtime is MANDATORY.', 'Survival? We call it a Tuesday.'] : null);
-        this.ev({ t: 'bossintro', name: b.def.name, text: 'WAVE ' + w + ' — PERFORMANCE REVIEW!' });
+        const b = this.spawnBoss(id, S.liftArena ? 'r' : (this.rng() < 0.5 ? 'l' : 'r'), id === 'ceo' ? ['Overtime is MANDATORY.', 'Survival? We call it a Tuesday.'] : null);
+        this.ev({ t: 'bossintro', name: b.def.name, text: 'LEVEL ' + L + ' — PERFORMANCE REVIEW!' });
         return;
       }
-      const types = S.unlocks.filter(([n]) => w >= n).map(u => u[1]);
-      const total = Math.round(4 + w * 1.5), counts = {};
-      for (let k = 0; k < total; k++) { const t = k < 2 ? types[types.length - 1] : types[Math.floor(this.rng() * types.length)]; counts[t] = (counts[t] || 0) + 1; }
-      if (S.speakerFrom && w >= S.speakerFrom && w % 2 === 0) counts.speaker = 1 + (w >= 14 ? 1 : 0);
-      V.max = Math.min(13, 5 + Math.floor(w * 0.6));
+      const counts = {};
+      for (let k = 0; k < P.total; k++) { const t = k < 2 ? P.types[P.types.length - 1] : P.types[Math.floor(this.rng() * P.types.length)]; counts[t] = (counts[t] || 0) + 1; }
+      if (P.speakers) counts.speaker = P.speakers;
+      V.max = P.max;
       if (S.liftArena) this.ev({ t: 'doors', open: true });
       this.queue = this.buildQueue(Object.entries(counts)); this.spawnT = 10; this.state = 'wave'; this.st = 0;
-      const J = SURV_LINES[(w - 1) % SURV_LINES.length];
-      this.ev({ t: 'wave', n: w, of: 0, text: J, surv: true });
+      this.ev({ t: 'wave', n: L, of: 0, text: SURV_LINES[(L - 1) % SURV_LINES.length], surv: true, level: L });
+    }
+    rushBoss() {
+      const V = this.surv, id = V.rushList[V.rushI]; this.state = 'bossIntro'; this.st = 0; this.queue = [];
+      const b = this.spawnBoss(id, this.stage.liftArena ? 'r' : (V.rushI % 2 ? 'r' : 'l'), null);
+      this.ev({ t: 'bossintro', name: b.def.name, text: 'BOSS RUSH ' + (V.rushI + 1) + ' / ' + V.rushList.length });
     }
     computeResult() {
       const s = this.stats, sec = s.frames / 60;

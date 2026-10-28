@@ -101,6 +101,8 @@ window.CO = window.CO || {};
       speakerFrom: 6 },
   };
   CO.SURV_ARENAS = ['survival', 'survival_lift'];
+  // v5: 100-level Survival rotates arenas every 10 levels (1-10 OVERTIME, 11-20 THE LIFT, ...); 91-100 (incl. the Boss Rush) is OVERTIME.
+  CO.survArenaFor = L => (L >= 91 ? 'survival' : CO.SURV_ARENAS[Math.floor((L - 1) / 10) % CO.SURV_ARENAS.length]);
 
   CO.STORY = {
     intro: [

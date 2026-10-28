@@ -169,6 +169,7 @@ window.CO = window.CO || {};
       defeat: ['Fine... take... Friday...', '...have a good weekend.'] },
   };
 
+  CO.BOSS_RUSH = ['micromanager', 'hrdirector', 'printerboss', 'muzak', 'landlord', 'ceo'];   // v5 level 100: every boss, one at a time
   CO.GRADES = [
     { g: 'S', min: 9000, c: 'Exceeds Expectations. Promoted to Front Row.' },
     { g: 'A', min: 7000, c: 'Strong performer. Leaves on time. Suspicious.' },

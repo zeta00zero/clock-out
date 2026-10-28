@@ -18,6 +18,7 @@
     tex('p_slime', 24, 24, g => { g.fillStyle(0x8ee35a, 0.9); g.fillCircle(12, 12, 11); g.fillStyle(0xd6ff9e, 0.9); g.fillCircle(8, 8, 4); });
     tex('p_star', 26, 26, g => { g.fillStyle(0xffe14d); const pts = []; for (let i = 0; i < 10; i++) { const r = i % 2 ? 5 : 12, a = -Math.PI / 2 + i * Math.PI / 5; pts.push({ x: 13 + Math.cos(a) * r, y: 13 + Math.sin(a) * r }); } g.fillPoints(pts, true); g.lineStyle(2, 0x9a6a00); g.strokePoints(pts, true); });
     tex('p_paw', 26, 26, g => { g.fillStyle(0xb48cff); g.fillEllipse(13, 17, 13, 11); g.fillCircle(5, 9, 3.4); g.fillCircle(10, 5, 3.4); g.fillCircle(16, 5, 3.4); g.fillCircle(21, 9, 3.4); g.fillStyle(0xf1e6ff); g.fillEllipse(11, 15, 4, 3); });
+    tex('p_note', 24, 30, g => { g.fillStyle(0xffd678); g.fillEllipse(7, 24, 12, 9); g.fillRect(11, 3, 3, 22); g.fillTriangle(14, 3, 23, 9, 14, 12); g.fillStyle(0xfff4c8); g.fillEllipse(5, 22, 4, 3); });   // v5 Wei Yao: gold music note
     tex('p_heart', 24, 22, g => { g.fillStyle(0xff9ad8); g.fillCircle(7, 8, 6); g.fillCircle(17, 8, 6); g.fillTriangle(1.5, 10, 22.5, 10, 12, 21); g.fillStyle(0xffe0f4); g.fillCircle(6, 6, 2); });
     tex('kbolt', 70, 16, g => { for (let i = 0; i < 4; i++) { g.fillStyle([0x6b3dd6, 0x9b6bff, 0xc9a8ff, 0xffffff][i], 0.9); g.fillEllipse(40 - i * 2, 8, 62 - i * 14, 14 - i * 3); } });
     tex('laserdot', 40, 40, g => { for (let i = 10; i > 0; i--) { g.fillStyle(0xff3040, 0.08); g.fillCircle(20, 20, i * 2); } g.fillStyle(0xff4050); g.fillCircle(20, 20, 4); g.fillStyle(0xffffff); g.fillCircle(19, 19, 1.6); });
@@ -65,6 +66,7 @@
         if (kind === 'star') { o.grav = 500; o.sc = 0.6 + Math.random() * 0.5; o.sc1 = 0.1; }
         if (kind === 'slime') { o.grav = 0; o.vz = 40; o.vx *= 0.3; o.vy *= 0.3; o.sc = 0.6; o.sc1 = 1.8; o.life = 24; }
         if (kind === 'paw') { o.grav = 380; o.sc = 0.7 + Math.random() * 0.5; o.sc1 = 0.3; o.vr *= 0.3; }
+        if (kind === 'note') { o.grav = -90; o.vz = 120 + Math.random() * 120; o.vx *= 0.35; o.vy *= 0.25; o.sc = 0.8 + Math.random() * 0.5; o.sc1 = 0.5; o.vr *= 0.2; o.life = 46; }
         if (kind === 'heart') { o.grav = -60; o.vz = 90 + Math.random() * 90; o.vx *= 0.25; o.vy *= 0.2; o.sc = 0.8; o.sc1 = 1.2; o.vr = 0; o.life = 50; }
         if (kind === 'ink' || kind === 'coffee') { o.grav = 1300; o.sc = 0.6 + Math.random() * 0.7; }
         if (kind === 'spark') { o.grav = 0; o.add = true; o.tint = this.sparkTint || (power > 1.2 ? 0xffd34d : 0x9ff8ff); o.life = 10 + Math.random() * 8; o.vz = 0; o.sc = 0.8; o.sc1 = 0.2; o.drag = 0.85; o.rot = a + Math.PI / 2; o.vr = 0; o.vx = Math.cos(a) * sp * 2; o.vy = Math.sin(a) * sp * 1.4; }
@@ -72,6 +74,11 @@
       }
     }
     hit(x, y, z, kind, heavy, gold) {
+      if (kind === 'note') {   // Wei Yao: gold sparkle + music notes (no blood)
+        this.sparkTint = 0xffe08a; this.burst('spark', x, y, z, heavy ? 10 : 6, 1.2); this.sparkTint = 0;
+        this.burst('note', x, y, z, heavy ? 4 : 2, heavy ? 1.1 : 0.8); this.burst('star', x, y, z + 20, heavy ? 3 : 1, 0.6);
+        this.part('glow', x, y, z, { grav: 0, life: 8, sc: heavy ? 1.3 : 0.8, sc1: 0.2, add: true, tint: 0xffd678, vr: 0 }); return;
+      }
       if (kind === 'paw') {   // Keith: purple sparkle + paw prints (no blood)
         this.sparkTint = 0xd2b0ff; this.burst('spark', x, y, z, heavy ? 10 : 6, 1); this.sparkTint = 0;
         this.burst('paw', x, y, z, heavy ? 5 : 3, heavy ? 1.1 : 0.8);

@@ -129,7 +129,7 @@
   }
 
   // ======================================================================================================
-  const RATING = { lemon: { hp: 0.95, spd: 0.65, pow: 0.95, role: 'BRUISER — heavy stapler hits, big ultimate' }, weisheng: { hp: 0.7, spd: 1, pow: 0.62, role: 'SKIRMISHER / SUPPORT — fast, air-dash, heals allies' }, keith: { hp: 0.62, spd: 0.8, pow: 0.7, role: 'SUMMONER / SUPPORT — laser range, holo catgirl allies, revives' } };
+  const RATING = { lemon: { hp: 0.95, spd: 0.65, pow: 0.95, role: 'BRUISER — heavy stapler hits, big ultimate' }, weisheng: { hp: 0.7, spd: 1, pow: 0.62, role: 'SKIRMISHER / SUPPORT — fast, air-dash, heals allies' }, keith: { hp: 0.62, spd: 0.8, pow: 0.7, role: 'SUMMONER / SUPPORT — laser range, holo catgirl allies, revives' }, weiyao: { hp: 0.55, spd: 0.88, pow: 0.78, role: 'AERIAL SHOWMAN — on-beat hits, air juggles, team buffs' } };
   class CharSelect extends Phaser.Scene {
     constructor() { super('CharSelect'); }
     create(d) {
@@ -139,16 +139,16 @@
       this.head = this.add.text(640, 30, '', CO.style(44, '#ffd34d')).setOrigin(0.5, 0);
       this.sub = this.add.text(640, 84, '', CO.style(20, '#cfe8ff')).setOrigin(0.5, 0);
       this.g = this.add.graphics(); this.cards = [];
-      const W = this.ids.length > 2 ? 396 : 440, H = 480, y0 = 122, gap = this.ids.length > 2 ? 16 : 30, tot = this.ids.length * W + (this.ids.length - 1) * gap;
+      const W = this.ids.length > 3 ? 296 : this.ids.length > 2 ? 396 : 440, H = 480, y0 = 122, gap = this.ids.length > 3 ? 12 : this.ids.length > 2 ? 16 : 30, tot = this.ids.length * W + (this.ids.length - 1) * gap;
       this.ids.forEach((id, i) => {
         const c = CO.CHARACTERS[id], x = 640 - tot / 2 + W / 2 + i * (W + gap), R = RATING[id] || { hp: 0.8, spd: 0.8, pow: 0.8, role: '' }, o = { id, x, y: y0, W, H, c, R }, L = x - W / 2;
-        o.spr = this.add.image(L + 110, y0 + 300, c.poses.idle).setOrigin(0.5, 1); o.badge = this.add.text(x + W / 2 - 14, y0 + 10, '', CO.style(30, '#ffffff')).setOrigin(1, 0);
-        this.add.text(L + 20, y0 + 28, c.name, CO.style(46, '#ffffff')).setOrigin(0, 0); this.add.text(L + 20, y0 + 82, '"' + c.title + '"', CO.style(18, '#9aa7c7'));
-        [['HP', R.hp, 0xe8384f], ['SPEED', R.spd, 0x6fd3ff], ['POWER', R.pow, 0xffc83d]].forEach(([n, v, col], k) => { const yy = y0 + 130 + k * 36, xx = L + 136; this.add.text(xx, yy - 2, n, CO.style(16, '#cfe8ff')); const gg = this.add.graphics(); gg.fillStyle(0x000000, 0.6); gg.fillRect(xx + 70, yy + 2, 140, 14); gg.fillStyle(col); gg.fillRect(xx + 70, yy + 2, 140 * v, 14); });
-        const rt = this.add.text(L + 20, y0 + 322, R.role, CO.style(15, '#ffe9a8', { wordWrap: { width: W - 40 } })); rt.setStroke('#0d1022', 3);
-        this.add.text(L + 20, y0 + 348, 'Weapon: ' + c.weapon, CO.style(14, '#9aa7c7'));
+        o.spr = this.add.image(L + (W < 300 ? 70 : 110), y0 + 304, c.poses.idle).setOrigin(0.5, 1).setScale(W < 300 ? 0.84 : 1); o.sc = W < 300 ? 0.84 : 1; o.badge = this.add.text(x + W / 2 - 14, y0 + 10, '', CO.style(30, '#ffffff')).setOrigin(1, 0);
+        this.add.text(L + 20, y0 + 28, c.name, CO.style(W < 300 ? 38 : 46, '#ffffff')).setOrigin(0, 0); this.add.text(L + 20, y0 + 82, '"' + c.title + '"', CO.style(W < 300 ? 16 : 18, '#9aa7c7'));
+        [['HP', R.hp, 0xe8384f], ['SPEED', R.spd, 0x6fd3ff], ['POWER', R.pow, 0xffc83d]].forEach(([n, v, col], k) => { const nar = W < 300, yy = y0 + 130 + k * 36, xx = L + (nar ? 120 : 136), bw = nar ? 96 : 140, bo = nar ? 62 : 70; this.add.text(xx, yy - 2, n, CO.style(nar ? 14 : 16, '#cfe8ff')); const gg = this.add.graphics(); gg.fillStyle(0x000000, 0.6); gg.fillRect(xx + bo, yy + 2, bw, 14); gg.fillStyle(col); gg.fillRect(xx + bo, yy + 2, bw * v, 14); });
+        const rt = this.add.text(L + 20, y0 + (W < 300 ? 308 : 322), R.role, CO.style(W < 300 ? 13 : 15, '#ffe9a8', { wordWrap: { width: W - 40 } })); rt.setStroke('#0d1022', 3);
+        this.add.text(L + 20, y0 + 352, 'Weapon: ' + c.weapon, CO.style(W < 300 ? 12 : 14, '#9aa7c7', { wordWrap: { width: W - 30 } }));
         const all = c.skills.concat([c.ult]);
-        all.forEach((s, k) => { const xx = L + 20 + k * 104; this.add.image(xx + 24, y0 + 404, s.icon).setDisplaySize(48, 48); const nm = this.add.text(xx + 24, y0 + 434, s.name, CO.style(12, k === 3 ? '#ffd34d' : '#cfe8ff', { align: 'center', wordWrap: { width: 100 } })).setOrigin(0.5, 0); });
+        const sp = W < 300 ? (W - 30) / 4 : 104, isz = W < 300 ? 44 : 48; all.forEach((s, k) => { const xx = L + (W < 300 ? 14 : 20) + k * sp; this.add.image(xx + 24, y0 + 404, s.icon).setDisplaySize(isz, isz); const nm = this.add.text(xx + 24, y0 + 434, s.name, CO.style(W < 300 ? 11 : 12, k === 3 ? '#ffd34d' : '#cfe8ff', { align: 'center', wordWrap: { width: sp - 4 } })).setOrigin(0.5, 0); });
         o.zone = this.add.zone(x, y0 + H / 2, W, H).setInteractive({ useHandCursor: true });
         o.zone.on('pointerover', () => { if (!this.leaving && this.cur !== i) { this.cur = i; CO.audio.sfx('ui'); } });
         o.zone.on('pointerdown', () => { if (this.fresh.ok) { this.cur = i; this.confirm(); } });
@@ -170,14 +170,14 @@
     confirm() {
       if (this.leaving) return; const o = this.cards[this.cur];
       if (this.taken(o.id)) { CO.audio.sfx('nope'); this.cameras.main.shake(80, 0.003); return; }
-      this.picks.push(o.id); CO.audio.sfx('uiok'); this.tweens.add({ targets: o.spr, scale: { from: 1.12, to: 1 }, duration: 200 }); this.pairs(); this.fresh.relock(220);
+      this.picks.push(o.id); CO.audio.sfx('uiok'); this.tweens.add({ targets: o.spr, scale: { from: 1.12 * o.sc, to: o.sc }, duration: 200 }); this.pairs(); this.fresh.relock(220);
       if (this.picks.length >= this.n) this.done();
       else { const nx = this.ids.findIndex(id => !this.taken(id)); if (nx >= 0) this.cur = nx; }
     }
     undo() {
       if (this.leaving) return; CO.audio.sfx('ui');
       if (this.picks.length) { this.picks.pop(); this.pairs(); return; }
-      this.leaving = true; this.scene.start(this.d.back || 'Title');
+      this.leaving = true; this.scene.start(this.d.back || 'Title', this.d.backData);
     }
     done() {
       this.leaving = true; CO.sel.chars = this.picks.slice(); CO.saveSel(); this.foot.setText('READY!  ' + this.picks.map((c, i) => 'P' + (i + 1) + ' ' + CO.CHARACTERS[c].name).join('  ·  ')).setColor('#7dff8a');

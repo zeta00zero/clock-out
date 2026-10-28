@@ -11,7 +11,7 @@
   //   opts.back = scene key for BACK, opts.label = "next up" line, opts.noHowTo = continue-the-run transitions
   CO.enterGame = (scene, key, data, opts = {}) => {
     if (key === 'Game' && data && !data.chars) data = Object.assign({ chars: CO.sel.chars.slice() }, data);   // v4: the fighter(s) picked on the select screen
-    if (opts.noHowTo || CO.params.skip || CO.howto.hidden()) { scene.scene.start(key, data); return; }
+    if (opts.noHowTo || (CO.net && CO.net.active()) || CO.params.skip || CO.howto.hidden()) { scene.scene.start(key, data); return; }
     scene.scene.start('HowTo', { target: { key, data }, back: opts.back || 'Title', label: opts.label || '' });
   };
 
@@ -88,7 +88,8 @@
       txt(this, ix + 16, py + 218, 20, '#ffd34d').setText('COMBOS & SPECIALS');
       const L = { lemon: ['LEMON: ATK ×4 = Memo → Cc → Bcc → Spin Cycle. HEAVY = Hard Copy (hold: Final Draft). JUMP+ATK juggles; HEAVY in the air = Hole Punch.', 'Coffee Rush / Staple Barrage / Briefcase Spin cost caffeine. Full meter: CLOCK OUT.'],
         weisheng: ['WEISHENG: ATK ×4 = Jab → Cross → Sweep → Spin Out. HEAVY = Torque Slam (hold: Full Tank). Fast dash, air-dash.', 'Garage Tune-Up heals (allies too), Emergency Brake stuns, Hairpin Drift slides. Full meter: HYPERION ZERO.'],
-        keith: ['KEITH: ATK ×4 = Aim Jab → Laser Whip → Pointer Shot → Spin Sweep (long reach, keep your distance). HEAVY = Hold-Click beam (hold to charge). DASH+ATK = Next Slide.', 'Laser Lure pulls zombies, Catgirl Call-Out summons a holo ally (max 2), Nine Lives revives a downed friend or shields the team. Stand still to Cat Nap (2× battery). Full meter: NYAN IDOL SHOWTIME.'] };
+        keith: ['KEITH: ATK ×4 = Aim Jab → Laser Whip → Pointer Shot → Spin Sweep (long reach, keep your distance). HEAVY = Hold-Click beam (hold to charge). DASH+ATK = Next Slide.', 'Laser Lure pulls zombies, Catgirl Call-Out summons a holo ally (max 2), Nine Lives revives a downed friend or shields the team. Stand still to Cat Nap (2× battery). Full meter: NYAN IDOL SHOWTIME.'],
+        weiyao: ['WEI YAO: ATK ×3 = Mic Swing → Cable Whip → Feedback. HEAVY = Mic Drop launcher (JUMP to cancel, then juggle). Double jump + air dash; HEAVY in the air = Stage Dive.', 'ON BEAT: hit as the metronome ticks for ×1.5 and a free 2nd jump + air dash; 8 in a row = FEVER (team +10% ATK). Encore Stage heals per zombie, Center Spin works in the air, Confetti Wall blocks. Full meter: PRISM CENTER LIVE!'] };
       const tips = [].concat(...inPlay.filter((c, i) => inPlay.indexOf(c) === i).map(c => L[c] || [])).concat(['DOUBLE JUMP: press JUMP again in mid-air (once per jump, a bit lower); air attacks still work after it.', 'Hits fill the ULT meter — when it glows, unleash it!', 'New zombies: dodge the telegraph (cones, rings: JUMP the shock-waves), avoid puddles & spills.', 'Co-op: P1 = keyboard 1 / pad 1, P2 = keyboard 2 / pad 2, P3-5 = pads.']);
       let ty = py + 248; tips.forEach(t => { const o = txt(this, ix + 34, ty, 13, '#ffffff', {}, { wordWrap: { width: 350 } }); o.setText(t); txt(this, ix + 16, ty - 1, 13, '#6fd3ff').setText('•'); ty += o.height + 4; });
       // ---- buttons ----
@@ -104,7 +105,7 @@
       CO.menuInput.update(); this.cameras.main.fadeIn(200);
     }
     go() { if (this.leaving || !this.fresh.ok) return; this.leaving = true; CO.audio.sfx('bell'); const t = this.d.target; this.cameras.main.fadeOut(220); this.time.delayedCall(240, () => { window.__howto = null; this.scene.start(t.key, t.data); }); }
-    back() { if (this.leaving) return; this.leaving = true; window.__howto = null; this.scene.start(this.d.back || 'Title'); }
+    back() { if (this.leaving) return; this.leaving = true; window.__howto = null; this.scene.start(this.d.back || 'Title', this.d.backData); }
     update() { if (this.leaving) return; const I = CO.menuInput.update(); this.fresh.poll(I); if (this.fresh.ok) this.row.update(I.p); if (this.fresh.ok && I.p.back) { CO.audio.sfx('ui'); this.back(); } }
   }
 
