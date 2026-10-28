@@ -52,7 +52,7 @@
       if (this.hitstop > 0) { this.hitstop--; return; }
       this.frame++; this.stats.frames++;
       if (this.state !== 'clear' && this.state !== 'failed') this.gameSec += this.clockRate * DT;
-      this.players.forEach((p, i) => this.updatePlayer(p, intents[i] || CO.emptyIntent()));
+      this.players.forEach((p, i) => this.updatePlayer(p, p.auto ? this.autoIntent(p) : (intents[i] || CO.emptyIntent())));
       if (this.timeStop > 0) { this.timeStop--; } else {
         this.updateAuras();
         for (const e of this.enemies) this.updateEnemy(e);
@@ -170,7 +170,7 @@
       o.x += o.vx * DT; o.y += o.vy * DT;
       if (o.z > 0 || o.vz > 0) { o.z += o.vz * DT; o.vz -= g * DT; if (o.z <= 0) { o.z = 0; o.landed = Math.abs(o.vz); o.vz = 0; } }
       const A = this.A, pad = o.kind === 'boss' ? 30 : 0;
-      if (o.kind === 'player' || o.state !== 'enter') { o.x = clamp(o.x, A.x0 + pad, A.x1 - pad); { const [a, b] = this.bandAt(o.x); o.y = clamp(o.y, a, b); } }
+      if (o.kind === 'player' || o.state !== 'enter') { o.x = clamp(o.x, A.x0 + pad, A.x1 - pad); { const [a, b] = this.bandFor(o); o.y = clamp(o.y, a, b); } }
     }
 
     startMove(p, id) {
@@ -499,10 +499,16 @@
       if (side === 'l') { x = A.x0 - 140; y = this.r(A.y0 + 40, A.y1 - 40); }
       else if (side === 'r') { x = A.x1 + 140; y = this.r(A.y0 + 40, A.y1 - 40); }
       else { x = this.r(A.x0 + 100, A.x1 - 100); y = A.y1 + 140; }
+      let door = null;
+      if (side !== 'b' && this.doorActive()) {   // v4.3: lift zombies step OUT of the open door instead of walking through the walls
+        const D = this.stage.door; x = this.r(D.sx[0], D.sx[1]); y = this.doorTh(x) - this.r(12, 30);
+        const tx = x - this.r(80, 150); door = { y0: y - 4, tx, ty: clamp(this.doorTh(tx) + this.r(40, 70), A.y0 + 10, A.y1 - 10) };
+      }
       const hp = d.hp * (1 + 0.35 * (n - 1)) * this.hpMul;
       const e = { walkD: this.r(0, 100), id: this.nextId++, kind: 'enemy', type, def: d, x, y, z: 0, vx: 0, vy: 0, vz: 0, face: x < (A.x0 + A.x1) / 2 ? 1 : -1,
         hp, maxhp: hp, state: 'enter', st: 0, cd: 40 + this.r(0, 60), w: d.w, guard: d.guard || 0, shieldDown: 0, flash: 0,
         slotY: this.r(-28, 28), pose: d.frames.walk, rot: 0, barkT: this.r(200, 900) };
+      if (door) { e.door = door; e.face = -1; }
       this.enemies.push(e); return e;
     }
 
@@ -523,11 +529,12 @@
         if (F.cycle) { e.pose = F.cycle[Math.floor(e.walkD / F.stride) % F.cycle.length]; e.rot = Math.sin(e.walkD / F.stride * Math.PI / 2) * 0.025; }
         else { e.pose = F.walk; const ph = e.walkD / 22; e.rot = Math.sin(ph) * 0.07; e.bob = Math.abs(Math.sin(ph)) * 6; }
       };
+      if (e.door && e.state !== 'enter') { const b0 = this.bandAt(e.x)[0]; e.door.y0 += 4; if (e.y < b0) e.y = Math.min(b0, e.y + 3); if (e.door.y0 >= b0) e.door = null; }   // v4.3: knocked mid-exit -> ease out of the doorway, no pop
       if (e.state === 'enter') {
-        const tx = clamp(e.x, A.x0 + 60, A.x1 - 60), ty = clamp(e.y, A.y0 + 20, A.y1 - 20);
+        const tx = e.door ? e.door.tx : clamp(e.x, A.x0 + 60, A.x1 - 60), ty = e.door ? e.door.ty : clamp(e.y, A.y0 + 20, A.y1 - 20);
         const dx = tx - e.x, dy = ty - e.y, L = Math.hypot(dx, dy) || 1;
         e.vx = dx / L * d.speed * 1.3; e.vy = dy / L * d.speed * 1.3; walkPose(); e.face = sign(dx || e.face);
-        if (L < 10) { e.state = 'chase'; e.st = 0; }
+        if (L < 10 || (e.door && e.st > 400)) { e.state = 'chase'; e.st = 0; e.door = null; }
       } else if (e.state === 'chase') {
         walkPose();
         if (e.type === 'hr' && e.shieldDown > 0) { e.pose = d.frames.hurt; }
@@ -692,6 +699,7 @@
       this.boss = { id: this.nextId++, kind: 'boss', type: id, def: d, x: L ? A.x0 - 200 : A.x1 + 200, y: (A.y0 + A.y1) / 2 - 20, z: 0, vx: 0, vy: 0, vz: 0, face: L ? 1 : -1,
         hp, maxhp: hp, poise: d.poise, state: 'intro', st: 0, cd: 60, w: d.w, flash: 0, phase: 1, pose: d.frames.idle, rot: 0, summonCd: 400, last: '',
         from: L ? 'l' : 'r', intro: lines || d.intro, fightT: 0 };
+      if (!L && this.doorActive()) { const D = this.stage.door, b = this.boss; b.x = (D.sx[0] + D.sx[1]) / 2; b.y = this.doorTh(b.x) - 16; b.door = { y0: b.y - 4, tx: b.x - 230, ty: (A.y0 + A.y1) / 2 }; }
       return this.boss;
     }
     startAura(b) {   // scripted, unwinnable lobby encounter: the CEO becomes immune and seals the exit
@@ -709,8 +717,9 @@
       if (b.state === 'intro') {
         b.pose = d.frames.idle; const L = b.from === 'l', tx = L ? A.x0 + 180 : A.x1 - 180;
         b.vx = L ? (b.x < tx ? 200 : 0) : (b.x > tx ? -160 : 0); b.rot = Math.sin(b.st * 0.2) * 0.03;
+        if (b.door) { const dx = b.door.tx - b.x, dy = b.door.ty - b.y, Ld = Math.hypot(dx, dy); b.vx = Ld > 6 ? dx / Ld * 120 : 0; b.y += Ld > 6 ? dy / Ld * 120 * DT : 0; }
         b.x += b.vx * DT; if (b.st === 40) say(b.intro[0]); if (b.st === 130) say(b.intro[1]);
-        if (b.st >= 210) { b.state = 'idle'; b.st = 0; b.cd = 30; }
+        if (b.st >= 210) { b.state = 'idle'; b.st = 0; b.cd = 30; b.door = null; }
         return;
       }
       if (b.state === 'dead') { b.pose = d.frames.hurt; b.rot = Math.min(1.4, b.st * 0.02); return; }
@@ -953,12 +962,25 @@
         const r = z.ramp || 1, k = x < z.x0 - r ? 0 : x < z.x0 ? (x - z.x0 + r) / r : x <= z.x1 ? 1 : 0;
         if (k > 0) { y0 = Math.max(y0, y0 + (z.y0 - y0) * k); y1 = y1 + (z.y1 - y1) * k; }
       }
+      const D = this.stage.door; if (D && x > D.x0 && x < D.x1) y0 = Math.max(y0, this.doorTh(x) + 22);   // v4.3: never stand on the open lift door's face
       return [y0, y1];
     }
+    // v4.3: lift doors. o.door = {y0} lets a scripted actor (boarding player / zombie stepping out) stand inside the doorway
+    doorTh(x) { const D = this.stage.door; return D.y + (x - D.x0) * D.k; }
+    bandFor(o) { const r = this.bandAt(o.x); if (o.door) r[0] = Math.min(r[0], o.door.y0); return r; }
+    doorActive() { const D = this.stage.door; if (!D) return false; if (!this.scroll) return true; const en = this.stage.encounters[this.enc]; return this.locked && !!(en && en.cab); }
+    autoIntent(p) {
+      const t = p.auto, it = CO.emptyIntent(), dx = t.x - p.x, dy = t.y - p.y;
+      if (Math.abs(dx) > 6) it.mx = sign(dx) * Math.min(1, Math.abs(dx) / 50 + 0.35);
+      if (Math.abs(dy) > 4) it.my = sign(dy) * Math.min(1, Math.abs(dy) / 40 + 0.35);
+      if (!it.mx && t.face) p.face = t.face;
+      return it;
+    }
+    autoDone(ps, d) { return ps.every(p => !p.alive || Math.hypot(p.auto.x - p.x, p.auto.y - p.y) < (d || 12)); }
     // v4.2: nobody touches the wall — final clamp of every actor's feet into the walkable band (after separate/knockback/dash)
     wallClamp() {
       const A = this.A;
-      const f = o => { const [a, b] = this.bandAt(o.x); o.y = o.state === 'enter' && o.kind !== 'player' ? Math.max(o.y, a) : clamp(o.y, a, b); };
+      const f = o => { const [a, b] = this.bandFor(o); o.y = (o.state === 'enter' || o.state === 'intro') && o.kind !== 'player' ? Math.max(o.y, a) : clamp(o.y, a, b); };
       for (const o of this.players) f(o);
       for (const o of this.enemies) f(o);
       if (this.boss) f(this.boss);
@@ -1007,7 +1029,7 @@
         const nxt = E[this.enc + 1], limit = nxt ? nxt.x + 560 : Math.min(S.len - 40, S.exit + 80);
         A.x0 = this.scrollMin + 40; A.x1 = Math.min(limit, minX + 1500);
         if (nxt && maxX >= nxt.x - 140) this.lock(this.enc + 1);
-        else if (!nxt && maxX >= S.exit - 30) this.finish(S.endScene || null);
+        else if (!nxt && maxX >= S.exit - 30) { if (S.door && S.lobbyLift) this.startExit(); else this.finish(S.endScene || null); }
       } else if (this.state === 'wave') {
         const en0 = E[this.enc];
         if (this.cd > 0) this.cd--;
@@ -1019,11 +1041,16 @@
         if (this.cd > 0) this.cd--;
         if (en.countdown && this.cd === 0 && !this.dinged) { this.dinged = true; this.ev({ t: 'lift_ding' }); }
         if (this.st >= 70) {
-          if (en.countdown) { if (this.cd > 0) this.nextWave(Math.min(this.wave + 1, this.curWaves.length - 1)); else this.unlock(true); }   // lift lobby: keep coming until the lift arrives
+          if (en.countdown) { if (this.cd > 0) this.nextWave(Math.min(this.wave + 1, this.curWaves.length - 1)); else if (this.stage.lobbyLift) this.startBoard(); else this.unlock(true); }   // lift lobby: keep coming until the lift arrives
           else if (this.wave + 1 < this.curWaves.length) this.nextWave();
           else if (en.boss) this.toBoss(en);
           else this.unlock(true);
         }
+      } else if (this.state === 'board') { this.dirBoard();
+      } else if (this.state === 'alight') {
+        if (this.autoDone(this.players) || this.st >= 150) { for (const p of this.players) { p.auto = null; p.door = null; p.iframes = 40; } this.lock(this.enc + 1); }
+      } else if (this.state === 'exitDoor') {
+        if (this.autoDone(this.players) || this.st >= 170) { for (const p of this.players) p.auto = null; this.finish(S.endScene || null); }
       } else if (this.state === 'bossIntro') {
         if (this.boss.state !== 'intro') { this.state = 'boss'; this.st = 0; }
       } else if (this.state === 'boss') {
@@ -1034,6 +1061,38 @@
         if (this.st === 60) this.ev({ t: 'bark', x: this.boss.x, y: this.boss.y, z: 330, msg: this.boss.def.defeat[1], boss: true });
         if (this.st >= 170) { const en = E[this.enc]; if (en.scene) this.finish(en.scene); else { this.boss = null; this.unlock(true); } }
       }
+    }
+    // v4.3: scripted lift boarding. Doors open -> everyone walks INTO the back-wall lift (behind its front jambs/panels) -> doors close ->
+    // fade -> the cab, stepping in from its open side door -> FLOOR 12 locks. All deterministic (sim frames).
+    startBoard() {
+      this.state = 'board'; this.st = 0; this.boardT = 0;
+      const L = this.stage.lobbyLift, cx = (L.x0 + L.x1) / 2, n = this.players.length;
+      this.ev({ t: 'liftdoor', id: 'lobby', open: true }); this.ev({ t: 'board' });
+      this.players.forEach((p, i) => { p.iframes = 9999; p.auto = { x: cx + (i - (n - 1) / 2) * 56, y: L.th + 40, face: 1 }; });
+    }
+    dirBoard() {
+      const L = this.stage.lobbyLift, cx = (L.x0 + L.x1) / 2, n = this.players.length, ps = this.players;
+      ps.forEach((p, i) => {   // one after another, through the doorway
+        if (this.st === 50 + i * 24) { const off = clamp((i - (n - 1) / 2) * 30, -48, 48); p.door = { y0: L.th - 40 }; p.auto = { x: cx + off, y: L.th - 26 - (i % 2) * 8, face: off < 0 ? 1 : -1 }; }
+      });
+      if (!this.boardT && this.st > 50 + (n - 1) * 24 && (ps.every(p => !p.alive || p.y < L.th - 14) || this.st >= 50 + n * 24 + 150)) { this.boardT = this.st; this.ev({ t: 'liftdoor', id: 'lobby', open: false }); }
+      if (this.boardT && this.st === this.boardT + 48) this.ev({ t: 'fadeout' });
+      if (this.boardT && this.st === this.boardT + 66) {   // ride up: into the cab
+        const S = this.stage, D = S.door, en = S.encounters[this.enc + 1];
+        this.view.x = clamp(en.x - 640, 0, S.len - 1280); this.scrollMin = this.view.x; this.locked = true;
+        Object.assign(this.A, S.cab, { x0: this.view.x + 40, x1: D.x1 });
+        ps.forEach((p, i) => {
+          const x = D.sx[0] + 12 + (i % 4) * 26, tx = 3270 - i * 80;
+          p.x = x; p.y = this.doorTh(x) - 14; p.z = 0; p.vx = p.vy = 0; p.face = -1; p.door = { y0: p.y - 4 };
+          p.auto = { x: tx, y: 640 + (i % 3) * 22, face: -1 };
+          if (!p.alive) { p.x = tx; p.y = 650; p.door = null; }
+        });
+        this.state = 'alight'; this.st = 0; this.ev({ t: 'snapcam', x: this.view.x + 640 });
+      }
+    }
+    startExit() {   // roof access: everyone steps out through the cab door (behind its near pillar)
+      const D = this.stage.door; this.state = 'exitDoor'; this.st = 0; this.A.x1 = D.x1;
+      this.players.forEach((p, i) => { const x = D.sx[0] + 20 + (i % 4) * 22; p.iframes = 9999; p.door = { y0: this.doorTh(x) - 30 }; p.auto = { x, y: this.doorTh(x) - 20, face: 1 }; });
     }
     lock(i) {
       const S = this.stage, en = S.encounters[i]; this.enc = i; this.checkpoint = i; this.locked = true;

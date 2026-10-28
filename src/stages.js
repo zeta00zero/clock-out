@@ -45,7 +45,9 @@ window.CO = window.CO || {};
       clear: 'Exit sealed. Plan B: THE LIFT, up to the roof.' },
     // The Lift: Part A = the lift lobby (a countdown with waves while the car arrives), Part B = inside the cab (waves at each floor stop) + mini-boss.
     s4: { id: 's4', num: 4, name: 'THE LIFT', sub: 'GOING UP', bg: 'bg_s4', music: 'stlift', boss_music: 'boss', light: 'lift',
-      len: 3744, h: 720, band: [440, 690], wallBase: 355, zones: [{ x0: 2600, x1: 99999, y0: 615, y1: 708, ramp: 160, wb: 580 }], cab: { x0: 2640, x1: 3500, y0: 615, y1: 708 }, exit: 3650, exitLabel: 'ROOF ACCESS', clock: T(18, 44), par: 170,
+      len: 3744, h: 720, band: [490, 690], wallBase: 468, zones: [{ x0: 2600, x1: 99999, y0: 615, y1: 708, ramp: 160, wb: 580 }], cab: { x0: 2640, x1: 3500, y0: 615, y1: 708 }, exit: 3330,
+      // v4.3: lift doors. lobbyLift = the back-wall lift you board (closed in the art; panels animate). door = the cab's open side door (threshold line y + (x - x0) * k)
+      lobbyLift: { x0: 2135, x1: 2300, top: 145, th: 468, fx0: 2111, fx1: 2324, ftop: 116 }, door: { x0: 3290, x1: 3560, y: 545, k: 0.27, sx: [3385, 3480], pil: [3532, 3580, 60, 720], hdr: [3290, 3580, 60, 136] }, exitLabel: 'ROOF ACCESS', clock: T(18, 44), par: 170,
       caption: ['6:44 PM. The lift lobby, ground floor.', 'The car is coming. So is rush hour. Hold the lobby, then ride it to the roof.'],
       encounters: [
         { x: 1000, label: 'LIFT LOBBY', waves: [W('Rush-Hour Commuters come in packs of three!', [['commuter', 3], ['salesman', 1]], 5)] },
@@ -92,7 +94,8 @@ window.CO = window.CO || {};
       speakerFrom: 6 },
     // v4: second arena — the lift cab. Doors open every wave; spawns from both sides; Mr. Muzak on waves 5 and 10, the Landlord on 15.
     survival_lift: { id: 'survival_lift', name: 'SURVIVAL', sub: 'THE LIFT', arenaName: 'THE LIFT', bg: 'bg_lift', music: 'stlift', boss_music: 'boss', light: 'liftarena', liftArena: true,
-      world: { w: 1600, h: 900 }, arena: { x0: 200, x1: 1400, y0: 765, y1: 875 }, wallBase: 730, clock: T(17, 59),
+      world: { w: 1600, h: 900 }, arena: { x0: 200, x1: 1330, y0: 765, y1: 875 }, wallBase: 730,
+      door: { x0: 1090, x1: 1420, y: 735, k: 0.41, sx: [1150, 1280], pil: [1334, 1394, 100, 900], hdr: [1000, 1394, 80, 150] }, clock: T(17, 59),
       bossEvery: 5, bossRotation: ['micromanager', 'hrdirector', 'printerboss', 'ceo'], bossAt: { 5: 'muzak', 10: 'muzak', 15: 'landlord' },
       unlocks: [[1, 'commuter'], [2, 'salesman'], [3, 'shambler'], [4, 'intern'], [6, 'hr'], [7, 'replyall'], [8, 'sniper'], [9, 'guard'], [11, 'wfh'], [12, 'umbrella'], [13, 'courier'], [14, 'laundry'], [16, 'bluescr'], [17, 'salaryman']],
       speakerFrom: 6 },

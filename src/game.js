@@ -66,6 +66,7 @@
         this.buildMap(stageId, W);
         this.drawExit(S);
       } else this.add.image(0, 0, S.bg).setOrigin(0).setDisplaySize(W.w, W.h).setDepth(0);
+      this.buildDoors(S, stageId, W);
       const cam = this.cameras.main; cam.setBounds(0, 0, W.w, W.h); cam.setBackgroundColor('#0b0f1e');
       this.charScale = 1;   // v4: Lemon is already drawn +26%
       this.fx = new CO.FX(this); this.views = new Map(); this.projViews = new Map(); this.pickViews = new Map(); this.bubbles = [];
@@ -82,8 +83,55 @@
       window.__sim = this.sim; window.__gameScene = this;
       this.fpsLog = [];
     }
+    // v4.3: lift doors as layers. Everything a body can pass BEHIND (near pillar/jambs, header, sliding panels) is cut out of the
+    // plate into its own image with depth = the door's threshold y; the opening/cab interior stays behind every actor.
+    cutPlate(stageId, x, y, w, h) {
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const c = cv.getContext('2d');
+      if (this.sim.scroll) {
+        const M = window.MAPDATA[stageId].meta;
+        for (const ch of (M.wall || []).concat(M.floor || [])) { const im = this.textures.get(ch.k).getSourceImage(); if (ch.x < x + w && ch.x + im.width > x && ch.y < y + h && ch.y + im.height > y) c.drawImage(im, ch.x - x, ch.y - y); }
+      } else { const im = this.textures.get(this.S.bg).getSourceImage(), k = im.width / this.sim.world.w; c.drawImage(im, x * k, y * k, w * k, h * k, 0, 0, w, h); }
+      return cv;
+    }
+    addCut(key, cv) { if (this.textures.exists(key)) this.textures.remove(key); this.textures.addCanvas(key, cv); return key; }
+    buildDoors(S, stageId) {
+      this.liftPanels = null; const D = S.door;
+      if (D) {   // open side door: near pillar + header in front of anyone inside the doorway
+        const dep = D.y + (D.pil[0] - D.x0) * D.k + 2;
+        for (const [nm, r] of [['pil', D.pil], ['hdr', D.hdr]]) this.add.image(r[0], r[2], this.addCut('door43_' + stageId + nm, this.cutPlate(stageId, r[0], r[2], r[1] - r[0], r[3] - r[2]))).setOrigin(0).setDepth(dep);
+      }
+      const L = S.lobbyLift; if (!L) return;
+      const fw = L.fx1 - L.fx0, fh = L.th + 4 - L.ftop, ox = L.x0 - L.fx0, oy = L.top - L.ftop, ow = L.x1 - L.x0, oh = L.th - L.top, hw = ow / 2;
+      const full = this.cutPlate(stageId, L.fx0, L.ftop, fw, fh);
+      const frame = document.createElement('canvas'); frame.width = fw; frame.height = fh; const fc = frame.getContext('2d'); fc.drawImage(full, 0, 0); fc.clearRect(ox, oy, ow, oh + 6);
+      const pan = i => { const cv = document.createElement('canvas'); cv.width = hw; cv.height = oh; cv.getContext('2d').drawImage(full, ox + i * hw, oy, hw, oh, 0, 0, hw, oh); return cv; };
+      const cab = document.createElement('canvas'); cab.width = ow; cab.height = oh; const g = cab.getContext('2d');   // the cab behind the doors (code-drawn, lit)
+      let gr = g.createLinearGradient(0, 0, 0, oh); gr.addColorStop(0, '#5b5f66'); gr.addColorStop(0.62, '#8a8d91'); gr.addColorStop(0.63, '#3d342b'); gr.addColorStop(1, '#6b5a47'); g.fillStyle = gr; g.fillRect(0, 0, ow, oh);
+      const bw = ow * 0.56, bx = (ow - bw) / 2, bh = oh * 0.62;   // back wall + perspective side walls
+      gr = g.createLinearGradient(bx, 0, bx + bw, 0); gr.addColorStop(0, '#9da2a8'); gr.addColorStop(0.5, '#c9cdd1'); gr.addColorStop(1, '#9da2a8'); g.fillStyle = gr; g.fillRect(bx, oh * 0.1, bw, bh - oh * 0.1);
+      g.fillStyle = 'rgba(30,30,36,0.35)'; g.beginPath(); g.moveTo(0, 0); g.lineTo(bx, oh * 0.1); g.lineTo(bx, bh); g.lineTo(0, oh); g.fill(); g.beginPath(); g.moveTo(ow, 0); g.lineTo(bx + bw, oh * 0.1); g.lineTo(bx + bw, bh); g.lineTo(ow, oh); g.fill();
+      g.fillStyle = 'rgba(255,240,205,0.9)'; g.fillRect(bx + 8, oh * 0.1 - 6, bw - 16, 5);   // ceiling light
+      g.fillStyle = 'rgba(120,96,70,0.9)'; g.fillRect(bx, bh * 0.66, bw, 5); g.fillRect(0, bh * 0.7, bx * 0.9, 4); g.fillRect(bx + bw + bx * 0.1, bh * 0.7, bx * 0.9, 4);   // hand rails
+      gr = g.createRadialGradient(ow / 2, oh * 0.15, 4, ow / 2, oh * 0.2, oh * 0.9); gr.addColorStop(0, 'rgba(255,236,190,0.35)'); gr.addColorStop(1, 'rgba(255,236,190,0)'); g.fillStyle = gr; g.fillRect(0, 0, ow, oh);
+      this.add.image(L.x0, L.top, this.addCut('lift43_cab', cab)).setOrigin(0).setDepth(-4);
+      const P = [this.add.image(L.x0, L.top, this.addCut('lift43_pl', pan(0))).setOrigin(0).setDepth(L.th + 0.1), this.add.image(L.x0 + hw, L.top, this.addCut('lift43_pr', pan(1))).setOrigin(0).setDepth(L.th + 0.1)];
+      this.add.image(L.fx0, L.ftop, this.addCut('lift43_frame', frame)).setOrigin(0).setDepth(L.th + 0.2);
+      this.liftPanels = { P, L, hw, oh, k: 0 };
+    }
+    setLift(k) {
+      const Q = this.liftPanels; if (!Q) return; Q.k = k; const s = Math.round(Q.hw * k), w = Math.max(0, Q.hw - s);
+      Q.P[0].setX(Q.L.x0 - s).setCrop(s, 0, w, Q.oh).setVisible(w > 0); Q.P[1].setX(Q.L.x0 + Q.hw + s).setCrop(0, 0, w, Q.oh).setVisible(w > 0);
+    }
+    liftDoor(open) {
+      const Q = this.liftPanels; if (!Q) return;
+      Q.anim = { a: Q.k, b: open ? 1 : 0, f0: this.sim.frame };   // sim-frame driven (45 frames), so it stays in sync with the scripted walk
+      CO.audio.sfx(open ? 'ding' : 'tick');
+    }
     drawExit(S) {
       if (S.exit > S.len) return;
+      if (S.lobbyLift && S.door) {   // v4.3: roof access is through the cab's open door
+        this.exitSign = this.add.text(S.exit + 40, S.cab.y1 - 22, S.exitLabel + ' →', CO.style(26, '#7dff8a')).setOrigin(0.5).setDepth(1.5); return;
+      }
       const x = S.exit + 40, y0 = S.band[0] - 10, g = this.add.graphics().setDepth(2);
       g.fillStyle(0x7dff8a, 0.10); g.fillRect(x - 70, y0 - 220, 140, S.band[1] - y0 + 220);
       g.lineStyle(4, 0x7dff8a, 0.7); g.strokeRect(x - 70, y0 - 220, 140, 220);
@@ -106,6 +154,7 @@
       let steps;
       if (CO.params.speed > 1) steps = CO.params.speed;
       else { this.acc += Math.min(delta, 100); steps = Math.floor(this.acc / STEP); this.acc -= steps * STEP; }
+      if (window.__fs !== undefined) { steps = window.__fs > 0 ? 1 : 0; if (steps) window.__fs--; }   // test hook: frame-exact capture
       for (let s = 0; s < steps; s++) {
         if (this.sim.slowmo > 0 && (this.sim.frame + s) % 3 !== 0 && CO.params.speed === 1) { this.sim.slowmo--; continue; }
         const its = intents.map((it, k) => ({ mx: it.mx, my: it.my, h: it.h, p: this.pend[k] }));
@@ -115,6 +164,7 @@
         if (this.ended) break;
       }
       CO.audio.setIntensity(this.sim.players.some(p => p.overtime) ? 1 : 0);
+      { const Q = this.liftPanels; if (Q && Q.anim) { const u = Math.min(1, (this.sim.frame - Q.anim.f0) / 45), e = 0.5 - Math.cos(u * Math.PI) / 2; this.setLift(Q.anim.a + (Q.anim.b - Q.anim.a) * e); if (u >= 1) Q.anim = null; } }
       this.perfWatch(delta);
       this.render(delta / 1000);
     }
@@ -223,7 +273,7 @@
         if (p.overtime && this.frameNo % 6 === 0 && p.state === 'move') this.ghost(v.spr, 0xffc83d);
       }
       for (const e of sim.enemies) {
-        const v = this.view(e, 'enemy'); this.place(v, e, SCALE.enemy);
+        const v = this.view(e, 'enemy'); this.place(v, e, SCALE.enemy); if (e.door && e.state === 'enter') { v.spr.setAlpha(Math.min(1, e.st / 16)); v.dA = 1; } else if (v.dA) { v.spr.setAlpha(1); v.dA = 0; }
         if (e.type === 'hr' && e.shieldDown > 0 && e.flash <= 0) v.spr.setTint(0xb8c4ff);
         v.bar.clear(); if (e.hp < e.maxhp) { const w = 70, x = e.x - w / 2, y = e.y - e.z - 158 * this.charScale; v.bar.fillStyle(0x000000, 0.6); v.bar.fillRect(x - 2, y - 2, w + 4, 9); v.bar.fillStyle(0x8ee35a); v.bar.fillRect(x, y, w * Math.max(0, e.hp / e.maxhp), 5); }
       }
@@ -356,6 +406,9 @@
         case 'whip': fx.arc(e.x, e.y, 70, e.face, -20, 20, { rx: e.r, ry: 30, col: 0x7dff8a, T: 10, w: 10 }); break;
         case 'poofs': fx.burst('paper', e.x, e.y, e.z + 10, 7, 0.9); A.sfx('tap'); break;
         case 'lock': A.sfx('tick'); break;
+        case 'liftdoor': if (e.id === 'lobby') this.liftDoor(e.open); break;
+        case 'fadeout': this.cameras.main.fadeOut(260, 0, 0, 0); break;
+        case 'snapcam': { const cam = this.cameras.main; cam.centerOn(e.x, 360); this.time.delayedCall(30, () => cam.fadeIn(420)); A.sfx('ding'); break; }
         case 'floor': A.sfx('ding'); break;
         case 'go': A.sfx('ready'); break;
         case 'kill': fx.poof(e.x, e.y, e.z); A.sfx('poof'); if (Math.random() < 0.15 && this.gate('quip', 120)) fx.text(e.x, e.y, e.z + 120, ['FILED!', 'SHREDDED!', 'ARCHIVED!', 'OUT OF OFFICE!', 'ESCALATED!'][Math.floor(Math.random() * 5)], { size: 26, col: '#ffffff', life: 50, pop: true }); break;
