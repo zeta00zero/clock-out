@@ -127,7 +127,7 @@
       ], { w: 380, h: 46, gap: 8 });
       const B = CO.save.best();
       this.add.text(70, 704, (B.score ? 'SURVIVAL BEST: ' + B.score.toLocaleString() + ' pts · wave ' + B.wave + '   ·   ' : '') + (CO.isTouchDevice() ? 'Tap to choose.' : 'WASD/Arrows + Enter  ·  Gamepad OK'), CO.style(17, '#cfe8ff')).setOrigin(0, 0.5);
-      this.add.text(1265, 708, 'v4 · 7-stage Story + Survival · Lemon & Weisheng · 1-5 player co-op', CO.style(14, '#9aa7c7')).setOrigin(1, 1);
+      this.add.text(1265, 708, 'v4.1 · 7-stage Story + Survival · Lemon & Weisheng · 1-5 player co-op', CO.style(14, '#9aa7c7')).setOrigin(1, 1);
       if (!d.seamless) this.cameras.main.fadeIn(d.fromIntro ? 180 : 400);
       this.events.on('resume', () => { CO.menuInput.update(); });
     }

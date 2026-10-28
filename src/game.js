@@ -22,11 +22,27 @@
       if (window.MAPDATA && window.MAPDATA[id]) return addImgs();
       const sc = document.createElement('script'); sc.src = 'maps/maps_' + id + '.js'; sc.onload = () => addImgs(); sc.onerror = () => { console.error('map script failed', id); done(); }; document.head.appendChild(sc);   // plain <script>: works on file:// (XHR does not)
     }
+    // v4.1: layered maps. BACKGROUND = one wide unique image (sky, skyline, single moon) at parallax F;
+    // PLAYFIELD = alpha WebP chunks scrolling 1:1 (transparent windows/sky); FOREGROUND = thin rain on the street (High fx only)
     buildMap(id, W) {
       const D = window.MAPDATA[id], M = D.meta;
+      if (M.bg) this.add.image(0, 0, M.bg.k).setOrigin(0).setScrollFactor(M.bg.F, 0).setDepth(-30);
       if (M.sky) this.add.image(0, 0, M.sky.k).setOrigin(0).setScrollFactor(M.sky.F, 0).setDepth(-30);
-      for (const c of M.far) this.add.image(c.x, M.farY || 0, c.k).setOrigin(0).setScrollFactor(M.F, 0).setDepth(-20);
+      for (const c of (M.far || [])) this.add.image(c.x, M.farY || 0, c.k).setOrigin(0).setScrollFactor(M.F, 0).setDepth(-20);
       for (const c of M.near) this.add.image(c.x, 0, c.k).setOrigin(0).setDepth(0);
+      this.fgRain = null;
+      if (id === 's7' && this.fxHigh) {
+        if (!this.textures.exists('fg_rain')) {
+          const g = this.make.graphics({ x: 0, y: 0, add: false }), r = new Phaser.Math.RandomDataGenerator(['rain41']);
+          for (let i = 0; i < 70; i++) {   // seamless: every streak wrapped inside the 256x256 tile
+            const x = r.between(0, 255), y = r.between(0, 255), l = r.between(18, 46), a = r.realInRange(0.25, 0.7);
+            g.lineStyle(1, 0xcfe0ff, a);
+            for (const dx of [0, -256, 256]) for (const dy of [0, -256, 256]) g.lineBetween(x + dx, y + dy, x + dx - l * 0.18, y + dy + l);
+          }
+          g.generateTexture('fg_rain', 256, 256); g.destroy();
+        }
+        this.fgRain = this.add.tileSprite(0, 0, 1280, 720, 'fg_rain').setOrigin(0).setScrollFactor(0).setDepth(3800).setAlpha(0.18);
+      }
     }
     build(data) {
       data = this.data0 = data || {};
@@ -159,6 +175,7 @@
     }
     render(dt) {
       this.frameNo = (this.frameNo || 0) + 1;
+      if (this.fgRain) { const c = this.cameras.main; this.fgRain.tilePositionX = c.scrollX * 1.35 - this.time.now * 0.12; this.fgRain.tilePositionY = -this.time.now * 0.9; }
       const sim = this.sim, t = this.time.now;
       for (const p of sim.players) {
         const v = this.view(p, 'player'); this.place(v, p, SCALE.player);
