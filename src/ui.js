@@ -3,8 +3,8 @@
   const Q = new URLSearchParams(location.search);
   CO.params = { bot: Q.has('bot'), speed: Math.max(1, +Q.get('speed') || 1), god: Q.has('god'), skip: Q.has('skip'), seed: +Q.get('seed') || 0, touch: Q.get('touch'), boss: Q.has('boss'),
     stage: Q.get('stage') || (Q.has('survival') ? 'survival' : null), players: +Q.get('players') || 1, chain: Q.has('chain'), cpu: Q.has('cpu'),
-    char: Q.get('char') || null, chars: Q.get('chars') ? Q.get('chars').split(',').filter(c => c) : null, fx: Q.get('fx') || null, noflash: Q.has('noflash'), nointro: Q.has('nointro'), level: +Q.get('level') || 0, net: Q.get('net') || null, room: Q.get('room') || null };
-  const DEF = { music: 0.6, sfx: 0.8, touch: 'auto', shake: true, fx: 'auto' };
+    char: Q.get('char') || null, chars: Q.get('chars') ? Q.get('chars').split(',').filter(c => c) : null, fx: Q.get('fx') || null, noflash: Q.has('noflash'), nointro: Q.has('nointro'), level: +Q.get('level') || 0, net: Q.get('net') || null, room: Q.get('room') || null, nopredict: Q.has('nopredict') };
+  const DEF = { music: 0.6, sfx: 0.8, touch: 'auto', shake: true, fx: 'auto', autoStory: true };
   try { CO.settings = Object.assign({}, DEF, JSON.parse(localStorage.getItem('clockout.settings') || '{}')); } catch (e) { CO.settings = Object.assign({}, DEF); }
   CO.saveSettings = () => { try { localStorage.setItem('clockout.settings', JSON.stringify(CO.settings)); } catch (e) {} CO.audio.setVolumes(CO.settings.music, CO.settings.sfx); };
   CO.audio.setVolumes(CO.settings.music, CO.settings.sfx);
@@ -226,15 +226,16 @@
       const pct = v => '◀ ' + Math.round(v * 10) + ' ▶';
       const back = () => { CO.saveSettings(); this.scene.stop(); this.scene.resume(this.from); };
       const tset = ['auto', 'on', 'off'];
-      this.menu = new Menu(this, 640, 240, [
+      this.menu = new Menu(this, 640, 210, [
         { label: () => 'MUSIC     ' + pct(S.music), adjust: d => { S.music = Phaser.Math.Clamp(Math.round(S.music * 10 + d) / 10, 0, 1); CO.saveSettings(); } },
         { label: () => 'SOUND FX  ' + pct(S.sfx), adjust: d => { S.sfx = Phaser.Math.Clamp(Math.round(S.sfx * 10 + d) / 10, 0, 1); CO.saveSettings(); } },
         { label: () => 'TOUCH CONTROLS  ◀ ' + S.touch.toUpperCase() + ' ▶', adjust: d => { S.touch = tset[(tset.indexOf(S.touch) + d + 3) % 3]; CO.saveSettings(); const t = this.scene.get('Touch'); if (t && t.refresh) t.refresh(); } },
         { label: () => 'SCREEN SHAKE  ◀ ' + (S.shake ? 'ON' : 'OFF') + ' ▶', adjust: () => { S.shake = !S.shake; CO.saveSettings(); } },
         { label: () => 'EFFECTS  ◀ ' + (S.fx || 'auto').toUpperCase() + ' ▶', adjust: d => { const f = ['auto', 'high', 'low']; S.fx = f[(f.indexOf(S.fx || 'auto') + d + 3) % 3]; CO.fxAutoLow = false; CO.saveSettings(); const g = this.scene.get('Ambient'); if (g && g.rebuild) g.rebuild(); const gm = this.scene.get('Game'); if (gm && gm.refreshFx) gm.refreshFx(); } },
+        { label: () => 'STORY AUTO-ADVANCE  ◀ ' + (S.autoStory !== false ? 'ON' : 'OFF') + ' ▶', adjust: () => { S.autoStory = S.autoStory === false; CO.saveSettings(); } },
         { label: 'BACK', cb: back },
-      ], { w: 560, align: 'center', depth: 10, onBack: back });
-      this.add.text(640, 640, 'Left/Right (or tap the sides) to change  ·  EFFECTS: HIGH = lighting, rim light, rain, reflections · LOW = lean (auto on phones)', CO.style(18, '#9aa7c7')).setOrigin(0.5);
+      ], { w: 560, h: 52, gap: 10, align: 'center', depth: 10, onBack: back });
+      this.add.text(640, 676, 'Left/Right (or tap the sides) to change  ·  EFFECTS: HIGH = lighting, rim light, rain, reflections · LOW = lean (auto on phones)', CO.style(18, '#9aa7c7')).setOrigin(0.5);
     }
     update() { this.menu.update(); }
   }
@@ -255,11 +256,17 @@
       const g = this.add.graphics(); g.fillStyle(0x000000, 0.72); g.fillRect(0, 520, 1280, 200);
       this.title = this.add.text(640, 575, '', CO.style(42, '#ffd34d')).setOrigin(0.5);
       this.sub = this.add.text(640, 640, '', CO.style(24, '#ffffff', { strokeThickness: 4, align: 'center', wordWrap: { width: 1100 } })).setOrigin(0.5);
-      this.hint = this.add.text(1260, 700, CO.isTouchDevice() ? 'Tap ▶' : 'Enter ▶   ·   Esc: skip', CO.style(18, '#9aa7c7')).setOrigin(1, 1);
+      this.hint = this.add.text(1260, 700, CO.isTouchDevice() ? 'Tap ▶' : 'Enter ▶   ·   A: auto   ·   Esc: skip', CO.style(18, '#9aa7c7')).setOrigin(1, 1);
+      this.cli = !!(CO.net && CO.net.isClient() && CO.net.inPlay); this.auto = CO.settings.autoStory !== false; this.lineDone = false;
       this.i = -1; this.fresh = new CO.Fresh(this, 300); this.next(); CO.audio.play('title'); CO.menuInput.update();
       // v3.1: pointer/tap obeys the same gate as the keys (a tap from the previous screen can't skip a line)
-      this.input.on('pointerdown', () => { if (this.fresh.ok && !(CO.net && CO.net.isClient() && CO.net.inPlay)) this.press(); });
+      this.input.on('pointerdown', (ptr, over) => { if (over && over.length) return; if (this.fresh.ok) this.confirm(); });
       const sk = this.add.text(1262, 18, 'SKIP ▶▶', CO.style(20, '#cfe8ff')).setOrigin(1, 0).setInteractive({ useHandCursor: true }); sk.on('pointerdown', () => { if (!(CO.net && CO.net.isClient() && CO.net.inPlay)) this.go(); });   // v3.2: tappable skip
+      // v5.2: AUTO ON/OFF toggle next to SKIP (tap / click, A key, gamepad Y; saved in Settings). Online the host's setting rules.
+      this.autoBtn = this.add.text(1140, 18, '', CO.style(20, '#cfe8ff')).setOrigin(1, 0).setInteractive({ useHandCursor: true }); this.autoBtn.on('pointerdown', () => this.toggleAuto());
+      this.prompt = this.add.text(1240, 668, '▶', CO.style(26, '#ffd34d')).setOrigin(0.5).setVisible(false); this.tweens.add({ targets: this.prompt, alpha: 0.15, duration: 420, yoyo: true, repeat: -1 });
+      if (this.input.keyboard) this.input.keyboard.on('keydown-A', () => this.toggleAuto());
+      this.padY = true; this.autoLabel();
       this.cameras.main.fadeIn(300);
     }
     next() {
@@ -268,23 +275,31 @@
       CO.audio.sfx(this.i === 0 ? 'tick' : 'ui'); this.fresh.relock(300);   // input lock on every new line
       if (P[this.i].img) this.bg.setTexture(P[this.i].img).setDisplaySize(1280, 720);
       this.title.setText(P[this.i].t).setScale(0.6).setAlpha(0); this.tweens.add({ targets: this.title, scale: 1, alpha: 1, duration: 260, ease: 'Back.out' });
-      this.full = P[this.i].s; this.ch = 0; this.sub.setText(''); this.doneAt = 0;
+      this.full = P[this.i].s; this.ch = 0; this.sub.setText(''); this.doneAt = 0; this.lineDone = false;
       window.__cutscene = (this.d.scene || 'intro') + ':' + this.i;
-      if (CO.net && CO.net.isHost() && CO.net.inPlay) CO.net.bcast({ t: 'cut', key: this.scene.key, i: this.i });   // v5 online: the host turns the pages
+      if (CO.net && CO.net.isHost() && CO.net.inPlay) CO.net.bcast({ t: 'cut', key: this.scene.key, i: this.i, auto: this.auto });   // v5 online: the host turns the pages
     }
     // first press completes the typewriter line, the next press advances
-    press() { if (this.leaving) return; if (this.ch < this.full.length) { this.ch = this.full.length; this.sub.setText(this.full); this.doneAt = performance.now(); this.fresh.relock(150); } else this.next(); }
+    press() { if (this.leaving) return; if (this.ch < this.full.length) { this.ch = this.full.length; this.sub.setText(this.full); this.doneAt = performance.now(); this.fresh.relock(150); this.netDone(); } else this.next(); }
+    // v5.2: confirm from anyone — a client asks the host (when the host has AUTO OFF); the host / solo player presses
+    confirm() { if (this.leaving) return; if (this.cli) { if (!this.auto && CO.net.inPlay) { CO.net.send({ t: 'cutok', key: this.scene.key, i: this.i }); this.fresh.relock(150); } return; } this.press(); }
+    toggleAuto() { if (this.leaving) return; if (this.cli) { this.autoLabel(true); return; } this.auto = !this.auto; CO.settings.autoStory = this.auto; CO.saveSettings(); CO.audio.sfx('ui'); if (this.auto && this.lineDone) this.doneAt = performance.now(); this.autoLabel(); if (CO.net && CO.net.isHost() && CO.net.inPlay) CO.net.bcast({ t: 'cutfx', key: this.scene.key, auto: this.auto }); }
+    autoLabel(hostNote) { this.autoBtn.setText('AUTO ' + (this.auto ? 'ON' : 'OFF') + (this.cli ? ' (host)' : '')).setColor(this.auto ? '#7dff8a' : '#ffb347'); if (hostNote) CO.net.toast && CO.net.toast('The host sets AUTO for the room'); }
+    netDone() { this.lineDone = true; if (CO.net && CO.net.isHost() && CO.net.inPlay) CO.net.bcast({ t: 'cutfx', key: this.scene.key, i: this.i, done: 1, auto: this.auto }); }
+    netFx(m) { if (m.auto !== undefined) { this.auto = !!m.auto; this.autoLabel(); } if (m.done && m.i === this.i) { this.ch = this.full.length; this.sub.setText(this.full); this.lineDone = true; } }
     go() {
       if (this.leaving) return; this.leaving = true; CO.audio.sfx('bell'); this.cameras.main.fadeOut(400);
       this.time.delayedCall(420, () => { if (this.d.next) this.scene.start(this.d.next, this.d.data); else { CO.save.markIntro(); if (CO.save.progress().unlocked > 1) this.scene.start('StageSelect'); else CO.startStage(this, 's1', { back: 'Title' }); } });
     }
-    panelTo(i) { if (i === this.i) return; this.i = i - 1; this.next(); }
+    panelTo(i, auto) { if (auto !== undefined && auto !== this.auto) { this.auto = !!auto; this.autoLabel(); } if (i === this.i) return; this.i = i - 1; this.next(); }
     update(t) {
       const I = CO.menuInput.update(); this.fresh.poll(I);
-      if (CO.net && CO.net.isClient() && CO.net.inPlay) { if (this.ch < this.full.length) { this.ch += 1.2; this.sub.setText(this.full.slice(0, Math.floor(this.ch))); } this.hint.setText('Host controls the story ▶'); return; }
-      if (this.ch < this.full.length) { this.ch += CO.params.speed > 1 ? 99 : 1.2; this.sub.setText(this.full.slice(0, Math.floor(this.ch))); if (this.ch >= this.full.length) this.doneAt = performance.now(); }
+      { const gp = navigator.getGamepads ? [...navigator.getGamepads()].some(p => p && p.buttons[3] && p.buttons[3].pressed) : false; if (gp && !this.padY) this.toggleAuto(); this.padY = gp; }
+      this.prompt.setVisible(!this.auto && !this.leaving && this.ch >= this.full.length);
+      if (CO.net && CO.net.isClient() && CO.net.inPlay) { if (this.ch < this.full.length) { this.ch += 1.2; this.sub.setText(this.full.slice(0, Math.floor(this.ch))); } this.hint.setText(this.auto ? 'Host controls the story ▶' : 'AUTO OFF: anyone presses Enter / taps ▶'); if (this.fresh.ok && I.p.confirm) this.confirm(); return; }
+      if (this.ch < this.full.length) { this.ch += CO.params.speed > 1 ? 99 : 1.2; this.sub.setText(this.full.slice(0, Math.floor(this.ch))); if (this.ch >= this.full.length) { this.doneAt = performance.now(); this.netDone(); } }
       if (!this.leaving && this.fresh.ok) { if (I.p.back) return this.go(); if (I.p.confirm) this.press(); }
-      if (!this.leaving && this.ch >= this.full.length && this.doneAt && performance.now() - this.doneAt > (CO.params.speed > 1 ? 150 : 3200) && this.fresh.ok) this.next();
+      if (!this.leaving && this.ch >= this.full.length && this.doneAt && (this.auto || CO.params.speed > 1) && performance.now() - this.doneAt > (CO.params.speed > 1 ? 150 : 3200) && this.fresh.ok) this.next();
     }
   }
 

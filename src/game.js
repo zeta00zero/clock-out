@@ -363,9 +363,11 @@
         else { zoom = Phaser.Math.Clamp(1280 / (mx - mn + 700), 0.8, 1); tx = Math.max(cx + 140, sim.scrollMin + 640 / zoom); }
         ty = 360;
       } else { zoom = Phaser.Math.Clamp(1280 / (mx - mn + 700), 0.8, 1); tx = cx; ty = cy; }
-      cam.setZoom(cam.zoom + (zoom - cam.zoom) * 0.08);
+      // v5.2: online clients smooth the camera by elapsed time (frame-rate independent); host / solo / local keep the per-frame lerp
+      const kz = this.netClient ? 1 - Math.pow(0.92, Math.min(100, this._dt || 16.67) / 16.67) : 0.08, kp = this.netClient ? 1 - Math.pow(0.9, Math.min(100, this._dt || 16.67) / 16.67) : 0.1;
+      cam.setZoom(cam.zoom + (zoom - cam.zoom) * kz);
       const curX = cam.scrollX + 640, curY = cam.scrollY + 360;
-      cam.centerOn(curX + (tx - curX) * 0.1, curY + (ty - curY) * 0.1);
+      cam.centerOn(curX + (tx - curX) * kp, curY + (ty - curY) * kp);
     }
     ghost(spr, col) {
       const g = this.add.image(spr.x, spr.y, spr.texture.key).setOrigin(spr.originX, spr.originY).setFlipX(spr.flipX).setRotation(spr.rotation).setScale(spr.scaleX, spr.scaleY).setDepth(spr.depth - 1).setTintFill(col).setAlpha(0.5).setBlendMode(Phaser.BlendModes.ADD);

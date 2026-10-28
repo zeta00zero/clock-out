@@ -75,7 +75,7 @@
         if (two) { cell(50, r[0], 200, '#ffe9a8'); cell(262, r[1], 180); cell(452, r[2], 150); cell(612, r[3], 92); cell(712, r[4], 112, '#cfe8ff'); }
         else { cell(50, r[0], 210, '#ffe9a8'); cell(270, r[1], 240); cell(520, r[3], 120); cell(650, r[4], 124, '#cfe8ff'); }
       });
-      txt(this, px + 18, py + ph - 28, 14, '#9aa7c7').setText(CO.touchOn() ? 'Touch: stick on the left, buttons on the right.' : 'Solo: arrow keys also move P1. U+I together = Clock Out. Change any key on the CONTROLS screen.');
+      txt(this, px + 18, py + ph - 28, 14, '#9aa7c7').setText(CO.touchOn() ? 'Touch: stick on the left, buttons on the right. Story scenes: tap AUTO to turn auto-advance off, then tap for each line.' : 'Solo: arrow keys also move P1. U+I = Clock Out. Story scenes: A / pad Y / AUTO button = auto-advance on/off (Settings).');
       // ---- items panel ----
       const ix = 850, iw = 400; panel(this, ix, py, iw, 196);
       txt(this, ix + 16, py + 10, 20, '#ffd34d').setText('ITEMS  (dropped by coworkers)');

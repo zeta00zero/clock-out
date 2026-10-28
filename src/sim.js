@@ -97,7 +97,7 @@
       };
       if (free) {
         if (tryGeneric(true)) return this.physics(p, GRAV);
-        if (take('jump')) { p.state = 'air'; p.vz = S.jump; p.airChain = 0; this.ev({ t: 'sfx', s: 'jump' }); }
+        if (take('jump')) { p.state = 'air'; p.vz = S.jump; p.airChain = 0; this.ev({ t: 'sfx', s: 'jump', p: p.id }); }
         else if (take('light')) this.startMove(p, c.start.light);
         else if (take('heavy')) this.startMove(p, c.start.heavy);
         else {
@@ -164,7 +164,7 @@
         if (p.st >= 55 && p.z <= 0) { p.state = 'idle'; p.st = 0; p.iframes = 50; }
       }
       this.physics(p, (p.state === 'move' && p.move && p.move.air && p.mt < (p.move.active[1] || 0)) ? GRAV * 0.55 : GRAV);
-      if (p.z <= 0 && p.state === 'air') { p.state = 'idle'; p.st = 0; p.airDashed = false; p.airJumps = 0; p.djT = 0; this.ev({ t: 'land', x: p.x, y: p.y }); }
+      if (p.z <= 0 && p.state === 'air') { p.state = 'idle'; p.st = 0; p.airDashed = false; p.airJumps = 0; p.djT = 0; this.ev({ t: 'land', x: p.x, y: p.y, p: p.id }); }
     }
 
     physics(o, g) {
@@ -182,7 +182,7 @@
       p.state = 'move'; p.move = m; p.moveId = id; p.mt = 0; p.prevMt = -1; p.hitMap = new Map(); p.charge = 0; p.st = 0;
       if (p.wantFace) p.face = p.wantFace;
       if (m.air) { p.airChain++; if (m.dive) { p.vz = -1700; p.vx = p.face * 120; } }
-      this.ev({ t: 'sfx', s: m.sfx || 'swing', delay: m.active[0] });
+      this.ev({ t: 'sfx', s: m.sfx || 'swing', delay: m.active[0], p: p.id });
       return true;
     }
 
@@ -218,7 +218,7 @@
       if (f >= m.cancel) {
         if (m.next.light && take('light')) { if (this.startMove(p, m.air && p.z <= 0 ? c.start.light : m.next.light)) return; }
         if (m.next.heavy && take('heavy')) { if (this.startMove(p, m.next.heavy)) return; }
-        if (m.jumpCancel && f > m.active[1] && take('jump')) { p.move = null; p.state = 'air'; p.st = 0; p.vz = p.char.stats.jump; p.airChain = 0; p.rot = 0; this.ev({ t: 'sfx', s: 'jump' }); return; }
+        if (m.jumpCancel && f > m.active[1] && take('jump')) { p.move = null; p.state = 'air'; p.st = 0; p.vz = p.char.stats.jump; p.airChain = 0; p.rot = 0; this.ev({ t: 'sfx', s: 'jump', p: p.id }); return; }
         if (p.z > 0 && m.air === undefined && take('light')) { this.startMove(p, c.start.air); return; }
         if (tryGeneric(false)) return;
       }
