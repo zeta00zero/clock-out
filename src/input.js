@@ -165,7 +165,8 @@
       const near = tg.filter(e => Math.abs(e.x - p.x) < 260 && Math.abs(e.y - p.y) < 120).length;
       if (p.ot >= 100 && (near >= 3 || t.kind === 'boss')) { press('ult'); return; }
       if (p.hp < p.maxhp * 0.55 && p.mp >= 30 && p.cds[0] <= 0) { press('s1'); return; }
-      const side = Math.sign(p.x - t.x) || 1, range = t.kind === 'boss' ? 150 : 75;
+      const side = Math.sign(p.x - t.x) || 1, range = p.char.botRange ? (t.kind === 'boss' ? p.char.botRange + 20 : p.char.botRange - 10) : (t.kind === 'boss' ? 150 : 75);
+      if (p.char.id === 'keith' && p.mp >= 40 && p.cds[2] <= 0 && sim.players.some(q => !q.alive)) { press('s3'); return; }
       const tx = t.x + side * range, ty = t.y + (this.slot ? ((this.slot % 2) ? 1 : -1) * 6 : 0);
       const dx = tx - p.x, dy = ty - p.y;
       if (Math.abs(dx) > 18) o.mx += Math.sign(dx); if (Math.abs(dy) > 12) o.my += Math.sign(dy);

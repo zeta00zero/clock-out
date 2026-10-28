@@ -11,7 +11,7 @@ window.CO = window.CO || {};
   // lighting preset keys are defined in fx.js (CO.LIGHT)
   CO.STAGES = {
     s1: { id: 's1', num: 1, name: '3RD FLOOR', sub: 'OPEN-PLAN PURGATORY', bg: 'bg_s1', music: 'st3f', boss_music: 'boss', light: 'f3',
-      len: 6400, h: 720, band: [345, 690], exit: 6250, exitLabel: 'STAIRWELL', clock: T(17, 59), par: 200,
+      len: 6400, h: 720, band: [345, 690], wallBase: 290, exit: 6250, exitLabel: 'STAIRWELL', clock: T(17, 59), par: 200,
       caption: ['5:59 PM. Lemon\'s desk, 3rd floor.', 'Goal: the stairwell. Obstacles: everyone.'],
       encounters: [
         { x: 1300, waves: [W('Cubicle Shamblers! And a Stapler Sniper on the far desks.', [['shambler', 3], ['sniper', 2]], 5)] },
@@ -21,17 +21,20 @@ window.CO = window.CO || {};
       ],
       clear: 'Stairwell reached. One floor down.' },
     s2: { id: 's2', num: 2, name: '2ND FLOOR', sub: 'MEETING ROOMS & SERVER FARM', bg: 'bg_s2', music: 'st2f', boss_music: 'boss', light: 'f2',
-      len: 6400, h: 720, band: [345, 690], exit: 6250, exitLabel: 'STAIRS DOWN', clock: T(18, 14), par: 220,
+      len: 6400, h: 720, band: [445, 690], wallBase: 400, exit: 6250, exitLabel: 'STAIRS DOWN', clock: T(18, 14), par: 220,
       caption: ['6:14 PM. 2nd floor.', 'Every meeting room is booked. By zombies. For "syncs".'],
       encounters: [
         { x: 1300, waves: [W('Keyboard Warriors throw their gear. IT Guys have cables.', [['kbwar', 2], ['itguy', 1], ['shambler', 3]], 6)] },
-        { x: 2700, waves: [W('Projector Presenters. Do NOT look at the slide.', [['presenter', 2], ['intern', 3], ['kbwar', 1]], 6)] },
+        { x: 2700, waves: [W('Projector Presenters. Do NOT look at the slide.', [['presenter', 2], ['intern', 3], ['kbwar', 1]], 6),
+          // v4.2: Keith's join moment at the projector
+          W('KEITH, the after-hours AV tech, pops out from behind the projector: "Bro... they ate my slides."', [['intern', 2]], 2),
+          W('LEMON: "Help us clock out and my spare STARSHIFT ticket is yours." KEITH: "Deal. Kitties, assemble."', [['shambler', 2]], 2)] },
         { x: 4000, waves: [W('The server room is overheating. Blue screens everywhere.', [['bluescr', 2], ['itguy', 2], ['presenter', 1], ['printer', 1]], 8)] },
         { x: 5350, waves: [W('Something in the copy room is... warming up.', [['intern', 3], ['bluescr', 1]], 4)], boss: 'printerboss', bossText: 'THE PRINTER FROM HELL is out of paper. And mercy.' },
       ],
       clear: 'Down to the lobby. Freedom is RIGHT there.' },
     s3: { id: 's3', num: 3, name: '1ST FLOOR', sub: 'THE LOBBY', bg: 'bg_s3', music: 'stlobby', boss_music: 'ceo', light: 'lobby',
-      len: 6400, h: 720, band: [425, 690], exit: 99999, exitLabel: 'EXIT', clock: T(18, 29), par: 200,
+      len: 6400, h: 720, band: [445, 690], wallBase: 400, exit: 99999, exitLabel: 'EXIT', clock: T(18, 29), par: 200,
       caption: ['6:29 PM. The lobby.', 'The front doors are RIGHT THERE. What could go wrong?'],
       encounters: [
         { x: 1300, waves: [W('Security Guards. They resist knockback. Use heavies!', [['guard', 2], ['shambler', 3]], 6)] },
@@ -42,7 +45,7 @@ window.CO = window.CO || {};
       clear: 'Exit sealed. Plan B: THE LIFT, up to the roof.' },
     // The Lift: Part A = the lift lobby (a countdown with waves while the car arrives), Part B = inside the cab (waves at each floor stop) + mini-boss.
     s4: { id: 's4', num: 4, name: 'THE LIFT', sub: 'GOING UP', bg: 'bg_s4', music: 'stlift', boss_music: 'boss', light: 'lift',
-      len: 3744, h: 720, band: [440, 690], exit: 3650, exitLabel: 'ROOF ACCESS', clock: T(18, 44), par: 170,
+      len: 3744, h: 720, band: [440, 690], wallBase: 355, zones: [{ x0: 2600, x1: 99999, y0: 615, y1: 708, ramp: 160, wb: 580 }], cab: { x0: 2640, x1: 3500, y0: 615, y1: 708 }, exit: 3650, exitLabel: 'ROOF ACCESS', clock: T(18, 44), par: 170,
       caption: ['6:44 PM. The lift lobby, ground floor.', 'The car is coming. So is rush hour. Hold the lobby, then ride it to the roof.'],
       encounters: [
         { x: 1000, label: 'LIFT LOBBY', waves: [W('Rush-Hour Commuters come in packs of three!', [['commuter', 3], ['salesman', 1]], 5)] },
@@ -54,7 +57,7 @@ window.CO = window.CO || {};
       ],
       clear: 'Roof access unlocked. The doors slide open on the night sky.' },
     s5: { id: 's5', num: 5, name: 'ROOFTOP', sub: 'HELIPAD', bg: 'bg_s5', music: 'stroof', boss_music: 'boss', light: 'roof',
-      len: 6400, h: 720, band: [385, 690], exit: 6050, exitLabel: 'HELIPAD', clock: T(19, 0), par: 200, endScene: 'roof',
+      len: 6400, h: 720, band: [390, 690], wallBase: 340, exit: 6050, exitLabel: 'HELIPAD', clock: T(19, 0), par: 200, endScene: 'roof',
       caption: ['7:00 PM. The roof. STARSHIFT\'s dome glows across the city.', 'There is a helicopter on the pad. Someone has to get to it.'],
       encounters: [
         { x: 1300, waves: [W('Pen Throwers! They volley from the vents.', [['penner', 3], ['intern', 3]], 6)] },
@@ -63,7 +66,7 @@ window.CO = window.CO || {};
       ],
       clear: 'The helicopter lifts off... and does not stay up.' },
     s6: { id: 's6', num: 6, name: 'THE APARTMENT', sub: 'WHERE THE HELICOPTER LANDED', bg: 'bg_s6', music: 'stapt', boss_music: 'boss', light: 'apt',
-      len: 6400, h: 720, band: [350, 690], exit: 6250, exitLabel: 'THE STREET', clock: T(19, 16), par: 220,
+      len: 6400, h: 720, band: [450, 690], wallBase: 410, exit: 6250, exitLabel: 'THE STREET', clock: T(19, 16), par: 220,
       caption: ['7:16 PM. A smashed unit on the 6th floor.', 'Smashed unit, corridor, laundry room, stairwell... then the street. The tenants are awake.'],
       encounters: [
         { x: 1300, waves: [W('The smashed unit. WFH Zombies shield with laptops.', [['wfh', 3], ['delivery', 2]], 5)] },
@@ -73,7 +76,7 @@ window.CO = window.CO || {};
       ],
       clear: 'Down the stairs and out onto the street. STARSHIFT is close.' },
     s7: { id: 's7', num: 7, name: 'THE STREETS', sub: 'RUN TO STARSHIFT', bg: 'bg_s7', music: 'ststreet', boss_music: 'ceo', light: 'streets',
-      len: 6800, h: 720, band: [370, 690], exit: 6650, exitLabel: 'STARSHIFT LIVE', clock: T(19, 32), par: 240,
+      len: 6800, h: 720, band: [445, 690], wallBase: 400, exit: 6650, exitLabel: 'STARSHIFT LIVE', clock: T(19, 32), par: 240,
       caption: ['7:32 PM. Neon City, in the rain.', 'Under half an hour to showtime. The CEO is NOT done with her.'],
       encounters: [
         { x: 1300, waves: [W('Scooter Couriers! They charge in a straight line, then crash.', [['courier', 3], ['umbrella', 2], ['shambler', 2]], 7)] },
@@ -83,13 +86,13 @@ window.CO = window.CO || {};
       ],
       clear: 'STARSHIFT. 8 PM. She made it.' },
     survival: { id: 'survival', name: 'SURVIVAL', sub: 'ENDLESS OVERTIME', arenaName: 'OVERTIME', bg: 'bg_arena', music: 'stage', boss_music: 'boss', light: 'arena',
-      world: { w: 1600, h: 900 }, arena: { x0: 280, x1: 1320, y0: 225, y1: 840 }, clock: T(17, 59),
+      world: { w: 1600, h: 900 }, arena: { x0: 280, x1: 1320, y0: 225, y1: 840 }, wallBase: 110, clock: T(17, 59),
       bossEvery: 5, bossRotation: ['micromanager', 'hrdirector', 'printerboss', 'ceo'], bossAt: { 15: 'landlord' },
       unlocks: [[1, 'shambler'], [2, 'intern'], [3, 'hr'], [4, 'replyall'], [6, 'printer'], [7, 'itguy'], [8, 'sniper'], [9, 'spiller'], [11, 'guard'], [12, 'bluescr'], [13, 'roller'], [14, 'kbwar'], [16, 'salaryman'], [17, 'umbrella'], [18, 'delivery'], [19, 'laundry']],
       speakerFrom: 6 },
     // v4: second arena — the lift cab. Doors open every wave; spawns from both sides; Mr. Muzak on waves 5 and 10, the Landlord on 15.
     survival_lift: { id: 'survival_lift', name: 'SURVIVAL', sub: 'THE LIFT', arenaName: 'THE LIFT', bg: 'bg_lift', music: 'stlift', boss_music: 'boss', light: 'liftarena', liftArena: true,
-      world: { w: 1600, h: 900 }, arena: { x0: 200, x1: 1400, y0: 620, y1: 860 }, clock: T(17, 59),
+      world: { w: 1600, h: 900 }, arena: { x0: 200, x1: 1400, y0: 765, y1: 875 }, wallBase: 730, clock: T(17, 59),
       bossEvery: 5, bossRotation: ['micromanager', 'hrdirector', 'printerboss', 'ceo'], bossAt: { 5: 'muzak', 10: 'muzak', 15: 'landlord' },
       unlocks: [[1, 'commuter'], [2, 'salesman'], [3, 'shambler'], [4, 'intern'], [6, 'hr'], [7, 'replyall'], [8, 'sniper'], [9, 'guard'], [11, 'wfh'], [12, 'umbrella'], [13, 'courier'], [14, 'laundry'], [16, 'bluescr'], [17, 'salaryman']],
       speakerFrom: 6 },

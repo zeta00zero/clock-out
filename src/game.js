@@ -22,14 +22,17 @@
       if (window.MAPDATA && window.MAPDATA[id]) return addImgs();
       const sc = document.createElement('script'); sc.src = 'maps/maps_' + id + '.js'; sc.onload = () => addImgs(); sc.onerror = () => { console.error('map script failed', id); done(); }; document.head.appendChild(sc);   // plain <script>: works on file:// (XHR does not)
     }
-    // v4.1: layered maps. BACKGROUND = one wide unique image (sky, skyline, single moon) at parallax F;
+    // v4.2: BACKGROUND -> WALL -> FLOOR -> actors -> FOREGROUND. v4.1: layered maps. BACKGROUND = one wide unique image (sky, skyline, single moon) at parallax F;
     // PLAYFIELD = alpha WebP chunks scrolling 1:1 (transparent windows/sky); FOREGROUND = thin rain on the street (High fx only)
     buildMap(id, W) {
       const D = window.MAPDATA[id], M = D.meta;
       if (M.bg) this.add.image(0, 0, M.bg.k).setOrigin(0).setScrollFactor(M.bg.F, 0).setDepth(-30);
       if (M.sky) this.add.image(0, 0, M.sky.k).setOrigin(0).setScrollFactor(M.sky.F, 0).setDepth(-30);
       for (const c of (M.far || [])) this.add.image(c.x, M.farY || 0, c.k).setOrigin(0).setScrollFactor(M.F, 0).setDepth(-20);
-      for (const c of M.near) this.add.image(c.x, 0, c.k).setOrigin(0).setDepth(0);
+      for (const c of (M.near || [])) this.add.image(c.x, 0, c.k).setOrigin(0).setDepth(0);
+      // v4.2: WALL/BUILDING layer (back walls, frames, doors, shopfronts; transparent windows) and FLOOR layer, both 1:1 so the wall base never slides
+      this.mapWall = (M.wall || []).map(c => this.add.image(c.x, c.y, c.k).setOrigin(0).setDepth(-10));
+      this.mapFloor = (M.floor || []).map(c => this.add.image(c.x, c.y, c.k).setOrigin(0).setDepth(-5));
       this.fgRain = null;
       if (id === 's7' && this.fxHigh) {
         if (!this.textures.exists('fg_rain')) {
@@ -54,7 +57,7 @@
       const chars = data.chars || (CO.params.chars && CO.params.chars.length ? CO.params.chars : null) || [CO.params.char || 'lemon'];
       const n = Phaser.Math.Clamp(Math.max(CO.params.players || 1, chars.length), 1, CO.MAX_PLAYERS); this.inputs = []; CO.activePlayers = n;
       for (let k = 0; k < n; k++) {
-        this.sim.addPlayer(chars[k] || ['lemon', 'weisheng'][k % 2], k);
+        this.sim.addPlayer(chars[k] || ['lemon', 'weisheng', 'keith'][k % 3], k);
         this.inputs.push(CO.Input.forSlot(k, { bot: k === 0 ? CO.params.bot : !!(CO.params.bot || CO.params.cpu), getSim: () => this.sim }));
       }
       CO.lastChars = this.sim.players.map(p => p.char.name);
@@ -158,7 +161,9 @@
       if (v.landT) { const k = Math.sin(v.landT / 8 * Math.PI) * 0.08; sx *= 1 + k; sy *= 1 - k; }
       let rot = (o.rot || 0) * (o.face < 0 ? -1 : 1);
       // v3: run/skid/turn lean now comes from the art itself (real frames), no procedural rotation
-      v.spr.setPosition(o.x, o.y - o.z - (o.bob || 0)).setRotation(rot).setScale(sx, sy).setDepth(o.y + (o.kind === 'player' ? 0.5 : 0));
+      let fxo = 0, fyo = 0;   // v4.2: double-jump flip spins around the body centre, not the feet
+      if (o.djT > 0 && o.state === 'air') { const hh = v.spr.displayHeight / 2, th = rot; fxo = -hh * Math.sin(th); fyo = -hh + hh * Math.cos(th); }
+      v.spr.setPosition(o.x + fxo, o.y - o.z - (o.bob || 0) + fyo).setRotation(rot).setScale(sx, sy).setDepth(o.y + (o.kind === 'player' ? 0.5 : 0));
       v.fl = flip; v.sx = sx; v.sy = sy; v.rot = rot;
       const shs = (o.w / 50) * Math.max(0.45, 1 - o.z / 500) * (o.kind === 'boss' ? 2.4 : 1.6) * this.charScale;
       v.sh.setPosition(o.x, o.y).setScale(shs, shs * 0.9).setAlpha(Math.max(0.3, 1 - o.z / 600));
@@ -172,6 +177,37 @@
       if (v.rim) v.rim.setTexture(tex).setOrigin(ox, 1).setFlipX(s.flipX).setPosition(s.x + k, s.y - 1).setRotation(s.rotation).setScale(v.sx, v.sy).setDepth(dd).setAlpha(a);
       if (v.rim2) v.rim2.setTexture(tex).setOrigin(ox, 1).setFlipX(s.flipX).setPosition(s.x - k, s.y - 1).setRotation(s.rotation).setScale(v.sx, v.sy).setDepth(dd).setAlpha(a * 0.8);
       if (v.refl) v.refl.setTexture(tex).setOrigin(ox, 1).setFlipX(s.flipX).setPosition(s.x, o.y + o.z).setRotation(-s.rotation).setScale(v.sx, -v.sy * 0.9).setAlpha(this.L.refl * s.alpha * (o.kind === 'boss' ? 0.8 : 1) * Math.max(0.2, 1 - o.z / 300));
+    }
+    // Keith: holo catgirl allies, laser-lure dots, Nine Lives shield bubbles, charm hearts, team ATK glow
+    renderKeith(t) {
+      const sim = this.sim, fx = this.fx; this.allyViews = this.allyViews || new Map(); this.lureViews = this.lureViews || new Map();
+      if (!this.kG) this.kG = this.add.graphics();
+      const seen = new Set();
+      for (const a of sim.allies) {
+        seen.add(a.id); let v = this.allyViews.get(a.id);
+        if (!v) { v = { spr: this.add.image(a.x, a.y, 'kt_cat_' + a.flav), sh: this.add.image(a.x, a.y, 'shadow').setAlpha(0.35), glow: this.add.image(a.x, a.y, 'glow').setBlendMode(Phaser.BlendModes.ADD).setTint(0xb48cff) }; this.allyViews.set(a.id, v); }
+        const key = 'kt_cat_' + a.flav + (a.atkT > 0 ? '_atk' : ''), fr = CO.FRAMES && CO.FRAMES[key] || window.FRAMES && window.FRAMES[key] || { ax: 0.5 };
+        const sc = this.charScale || 1, fl = a.face < 0;
+        v.spr.setTexture(key).setFlipX(fl).setOrigin(fl ? 1 - fr.ax : fr.ax, 1).setScale(sc).setPosition(a.x, a.y - 6 - Math.abs(Math.sin(t / 180 + a.id)) * 6).setDepth(a.y + 0.3)
+          .setAlpha((a.T < 60 && (a.T >> 2) % 2 ? 0.35 : 0.88) + Math.sin(t / 50 + a.id) * 0.06);
+        v.sh.setPosition(a.x, a.y).setScale(0.9 * sc, 0.8 * sc).setDepth(a.y - 1);
+        v.glow.setPosition(a.x, a.y - 60 * sc).setScale(1.3 * sc, 1.6 * sc).setAlpha(0.22 + Math.sin(t / 90) * 0.06).setDepth(a.y - 0.5);
+        if (this.frameNo % 9 === 0) fx.burst('spark', a.x, a.y, 40 + Math.random() * 60, 1, 0.3);
+      }
+      for (const [id, v] of this.allyViews) if (!seen.has(id)) { fx.burst('paw', v.spr.x, v.spr.y, 60, 4, 0.7); v.spr.destroy(); v.sh.destroy(); v.glow.destroy(); this.allyViews.delete(id); }
+      const seenL = new Set();
+      for (const L of sim.lures) {
+        seenL.add(L.id); let im = this.lureViews.get(L.id);
+        if (!im) { im = this.add.image(L.x, L.y, 'laserdot').setBlendMode(Phaser.BlendModes.ADD); this.lureViews.set(L.id, im); }
+        im.setPosition(L.x + Math.sin(t / 70) * 6, L.y - 4 + Math.cos(t / 90) * 3).setDepth(L.y + 1).setScale(1 + Math.sin(t / 60) * 0.15).setAlpha(L.T < 30 ? L.T / 30 : 1);
+      }
+      for (const [id, im] of this.lureViews) if (!seenL.has(id)) { im.destroy(); this.lureViews.delete(id); }
+      const g = this.kG; g.clear(); g.setDepth(4500);
+      for (const p of sim.players) {
+        if (p.alive && p.shieldT > 0 && p.shield > 0) { g.lineStyle(4, 0xc58cff, 0.35 + 0.25 * Math.sin(t / 80)); g.strokeEllipse(p.x, p.y - p.z - 110, 170, 250); g.fillStyle(0xb48cff, 0.08); g.fillEllipse(p.x, p.y - p.z - 110, 170, 250); }
+        if (p.alive && p.atkUpT > 0 && this.frameNo % 12 === 0) fx.burst('paw', p.x, p.y, 200, 1, 0.3);
+      }
+      for (const e of sim.enemies) if (e.charmT > 0 && this.frameNo % 20 === 0) fx.burst('heart', e.x, e.y, 170, 1, 0.6);
     }
     render(dt) {
       this.frameNo = (this.frameNo || 0) + 1;
@@ -203,11 +239,13 @@
         im.setPosition(q.x, q.y - q.z).setDepth(q.y + 2);
         if (q.kind === 'staple') im.setRotation(Math.atan2(q.vy, q.vx) + Math.PI / 2);
         else if (q.kind === 'note' && q.ang !== undefined) im.setRotation(q.ang * (q.tex === 'bolt' || q.tex === 'pen' ? 1 : 0) + (q.tex === 'bolt' || q.tex === 'pen' ? 0 : im.rotation * 0 + (this.frameNo * 0.08)));
+        else if (q.kind === 'pbolt') { im.setFlipX(q.vx < 0); if (this.frameNo % 2 === 0) this.fx.burst('spark', q.x, q.y, q.z, 1, 0.5); }
         else if (q.kind === 'homing') im.setRotation(q.ang + Math.PI / 2 * 0);
         else if (q.kind === 'eproj') im.rotation += 0.12;
         else im.rotation += q.kind === 'case' ? 0.5 : 0.2;
       }
       for (const [id, im] of this.projViews) if (!seenP.has(id)) { im.destroy(); this.projViews.delete(id); }
+      this.renderKeith(t);
       const seenK = new Set();
       for (const k of sim.pickups) { seenK.add(k.id); let im = this.pickViews.get(k.id); if (!im) { im = this.add.image(k.x, k.y, k.type); this.pickViews.set(k.id, im); } im.setPosition(k.x, k.y - 20 - Math.abs(Math.sin(k.t / 12)) * 14).setDepth(k.y).setAlpha(k.t > 780 && k.t % 10 < 5 ? 0.3 : 1); }
       for (const [id, im] of this.pickViews) if (!seenK.has(id)) { im.destroy(); this.pickViews.delete(id); }
@@ -288,13 +326,21 @@
         case 'swing': {
           if (e.enemy) { fx.arc(e.x, e.y, 40, e.face, -80, 80, { rx: e.r || 190, ry: 90, col: 0xff9a2e, T: 14, w: 40 }); break; }
           const p = sim.players.find(q => q.id === e.p), m = p && p.char.moves[e.move]; if (!m) break;
-          const col = e.overtime ? 0xffc83d : e.charged ? 0xffffff : 0x5ff6ff;
+          const col = e.overtime ? 0xffc83d : e.charged ? 0xffffff : (p.char.fxCol || 0x5ff6ff);
+          if (e.beam) fx.beam(e.x, e.y, e.z, e.face, e.beam, col, e.charged ? 16 : 10);
           if (e.spin) fx.arc(e.x, e.y, e.z, e.face, -180, 180, { rx: m.hit.rx, ry: m.hit.ry, col, T: 22, follow: p });
           else if (e.arc) fx.arc(e.x + e.face * 20, e.y, e.z, e.face, e.arc[0], e.arc[1], { rx: m.hit.rx + 20, ry: m.hit.ry + 10, col, vert: e.move === 'promo' || !!m.air, T: 11 });
           if (e.shock) { fx.shock(e.x + e.face * (m.hit.fx || 0), e.y, col, e.charged); A.sfx('kachunk'); }
-          if (e.charged) { fx.text(e.x, e.y, 200, 'FINAL DRAFT!', { size: 40, col: '#ffd34d', life: 60, pop: true }); A.sfx('hitHeavy'); }
+          if (e.charged && m.charge && m.charge.name) { fx.text(e.x, e.y, 200, m.charge.name.toUpperCase() + '!', { size: 40, col: '#e2c8ff', life: 60, pop: true }); A.sfx('hitHeavy'); }
+          else if (e.charged) { fx.text(e.x, e.y, 200, 'FINAL DRAFT!', { size: 40, col: '#ffd34d', life: 60, pop: true }); A.sfx('hitHeavy'); }
           break;
         }
+        case 'lure': fx.beam(e.px, e.py, 0, e.face, Math.abs(e.x - e.px) - 60, 0xff4050, 4); fx.ringAt(e.x, e.y, 250, 0xff6070, 20, true); break;
+        case 'callout': fx.burst('paw', e.x, e.y, 60, 8, 1); fx.burst('spark', e.x, e.y, 80, 10, 1); fx.ringAt(e.x, e.y, 80, 0xc58cff, 18, true); fx.text(e.x, e.y, 200, { ninja: 'NINJA NEKO!', brawl: 'BRAWLER NEKO!', maid: 'CAFÉ MAID NEKO!' }[e.flav], { size: 24, col: '#e2c8ff', life: 50 }); break;
+        case 'catatk': fx.arc(e.x + e.face * 10, e.y, 0, e.face, -60, 60, { rx: e.flav === 'maid' ? 90 : 120, ry: 50, col: e.flav === 'maid' ? 0xffb8e8 : 0xc58cff, T: 9, w: 14 }); break;
+        case 'revive': fx.burst('paw', e.x, e.y, 60, 12, 1.2); fx.ringAt(e.x, e.y, 140, 0xe2c8ff, 26, true); A.sfx('overtime'); break;
+        case 'shield': fx.ringAt(e.x, e.y, 90, 0xc58cff, 20, true); break;
+        case 'charm': fx.burst('heart', e.x, e.y, 150, 3, 1); break;
         case 'shake': if (CO.settings.shake) this.cameras.main.shake(e.d, e.a); break;
         case 'hit': {
           const gold = sim.players.some(p => p.overtime);
@@ -329,16 +375,21 @@
         case 'doors': A.sfx('ding'); break;
         case 'dash': A.sfx('dash'); fx.burst('paper', e.x, e.y, 5, 3, 0.4); break;
         case 'land': A.sfx('thud'); break;
+        case 'djump': A.sfx('djump'); fx.burst('spark', e.x, e.y, e.z + 10, 9, 0.9); fx.dust(e.x, e.y, 2, 0xe8eeff); break;
         case 'thud': A.sfx('thud'); fx.burst('paper', e.x, e.y, 5, 3, 0.5); break;
         case 'skill': { const nm = { coffee: 'slurp', staples: 'kachunk', briefcase: 'throw', tuneup: 'wrench', ebrake: 'brake', hairpin: 'skid' }[e.id]; if (nm) A.sfx(nm); const q = sim.players.find(o => o.id === e.p); fx.text(e.x, e.y, 230, e.name.toUpperCase() + '!', { size: 28, col: q ? hex(q.char.color || 0x6fd3ff) : '#6fd3ff', life: 40, vz: 40 }); break; }
-        case 'buff': if (e.wrench) { fx.burst('spark', e.x, e.y, 120, 12, 1.2); fx.ringAt(e.x, e.y, 120, 0xff9a4a, 22, true); } else fx.burst('coffee', e.x, e.y, 120, 10, 1); break;
+        case 'buff': if (e.idol) { fx.burst('paw', e.x, e.y, 140, 6, 0.8); fx.ringAt(e.x, e.y, 90, 0xffb8e8, 20, true); } else if (e.wrench) { fx.burst('spark', e.x, e.y, 120, 12, 1.2); fx.ringAt(e.x, e.y, 120, 0xff9a4a, 22, true); } else fx.burst('coffee', e.x, e.y, 120, 10, 1); break;
         case 'ult_ready': A.sfx('ready'); { const p = sim.players.find(q => q.id === e.p) || sim.players[0]; fx.text(p.x, p.y, 260, (p.char.otName || 'ULT') + ' READY!', { size: 30, col: '#ffd34d', life: 70, pop: true }); } break;
         case 'overtime': A.sfx('overtime'); break;
         case 'ult_start': A.sfx('bell'); break;
         case 'ult_hit': {
           A.sfx('ultHit'); this.cameras.main.flash(260, 255, 255, 240);
           const p = sim.players.find(q => q.id === e.p) || sim.players[0]; fx.shock(p.x, p.y, 0xffd34d, true); fx.shock(p.x, p.y, p.char.color || 0x6fd3ff, true);
-          for (const en of sim.enemies) { fx.burst('paper', en.x, en.y, 80, 10, 1.4); }
+          if (p.char.id === 'keith') {   // Nyan Idol Showtime: stage lights, hearts + paw confetti
+            for (const en of sim.enemies) { fx.burst('heart', en.x, en.y, 160, 3, 1); fx.burst('paw', en.x, en.y, 80, 6, 1.2); }
+            for (let k = 0; k < 5; k++) fx.ringAt(p.x, p.y, 120 + k * 90, [0xc58cff, 0xffb8e8, 0x8fe8ff][k % 3], 28 + k * 4, true);
+            fx.burst('paw', p.x, p.y, 200, 20, 1.6); fx.text(p.x, p.y, 300, 'NYA~!', { size: 54, col: '#ffb8e8', life: 80, pop: true });
+          } else for (const en of sim.enemies) { fx.burst('paper', en.x, en.y, 80, 10, 1.4); }
           break;
         }
         case 'tell': { const o = this.ent(e.id); if (o) fx.text(o.x, o.y, o.z + (e.boss ? 300 : 170), '!', { size: e.boss ? 64 : 44, col: '#ffd34d', life: e.boss ? 40 : 26, vz: 0, pop: true }); break; }

@@ -87,8 +87,9 @@
       panel(this, ix, py + 208, iw, ph - 208);
       txt(this, ix + 16, py + 218, 20, '#ffd34d').setText('COMBOS & SPECIALS');
       const L = { lemon: ['LEMON: ATK ×4 = Memo → Cc → Bcc → Spin Cycle. HEAVY = Hard Copy (hold: Final Draft). JUMP+ATK juggles; HEAVY in the air = Hole Punch.', 'Coffee Rush / Staple Barrage / Briefcase Spin cost caffeine. Full meter: CLOCK OUT.'],
-        weisheng: ['WEISHENG: ATK ×4 = Jab → Cross → Sweep → Spin Out. HEAVY = Torque Slam (hold: Full Tank). Fast dash, air-dash.', 'Garage Tune-Up heals (allies too), Emergency Brake stuns, Hairpin Drift slides. Full meter: HYPERION ZERO.'] };
-      const tips = [].concat(...inPlay.filter((c, i) => inPlay.indexOf(c) === i).map(c => L[c] || [])).concat(['Hits fill the ULT meter — when it glows, unleash it!', 'New zombies: dodge the telegraph (cones, rings: JUMP the shock-waves), avoid puddles & spills.', 'Co-op: P1 = keyboard 1 / pad 1, P2 = keyboard 2 / pad 2, P3-5 = pads.']);
+        weisheng: ['WEISHENG: ATK ×4 = Jab → Cross → Sweep → Spin Out. HEAVY = Torque Slam (hold: Full Tank). Fast dash, air-dash.', 'Garage Tune-Up heals (allies too), Emergency Brake stuns, Hairpin Drift slides. Full meter: HYPERION ZERO.'],
+        keith: ['KEITH: ATK ×4 = Aim Jab → Laser Whip → Pointer Shot → Spin Sweep (long reach, keep your distance). HEAVY = Hold-Click beam (hold to charge). DASH+ATK = Next Slide.', 'Laser Lure pulls zombies, Catgirl Call-Out summons a holo ally (max 2), Nine Lives revives a downed friend or shields the team. Stand still to Cat Nap (2× battery). Full meter: NYAN IDOL SHOWTIME.'] };
+      const tips = [].concat(...inPlay.filter((c, i) => inPlay.indexOf(c) === i).map(c => L[c] || [])).concat(['DOUBLE JUMP: press JUMP again in mid-air (once per jump, a bit lower); air attacks still work after it.', 'Hits fill the ULT meter — when it glows, unleash it!', 'New zombies: dodge the telegraph (cones, rings: JUMP the shock-waves), avoid puddles & spills.', 'Co-op: P1 = keyboard 1 / pad 1, P2 = keyboard 2 / pad 2, P3-5 = pads.']);
       let ty = py + 248; tips.forEach(t => { const o = txt(this, ix + 34, ty, 13, '#ffffff', {}, { wordWrap: { width: 350 } }); o.setText(t); txt(this, ix + 16, ty - 1, 13, '#6fd3ff').setText('•'); ty += o.height + 4; });
       // ---- buttons ----
       const items = [];
@@ -122,7 +123,8 @@
       panel(this, 30, 134, 1220, 490, 0.92);
       this.hdr = ['ACTION', 'KEY 1', 'KEY 2'].map((s, i) => txt(this, [60, 560, 780][i], 142, 16, '#6fd3ff').setText(s));
       this.cells = []; this.labels = []; this.hints = [];
-      const HINT = { up: 'Move', down: 'Move', left: 'Move (also faces her)', right: 'Move', light: 'Tap ×4 for the combo', heavy: 'Hold to charge', jump: 'Then ATK to juggle', dash: 'Then ATK = lunge', s1: 'Heal + haste', s2: 'Fan of staples', s3: 'Boomerang briefcase', ult: 'Needs full meter (S1+S2 also works)', pause: 'Esc always works for P1' };
+      const HINT = { up: 'Move', down: 'Move', left: 'Move (also faces her)', right: 'Move', light: 'Tap ×4 for the combo', heavy: 'Hold to charge', jump: 'Again in mid-air = DOUBLE JUMP', dash: 'Then ATK = lunge', s1: 'Heal + haste', s2: 'Fan of staples', s3: 'Boomerang briefcase', ult: 'Needs full meter (S1+S2 also works)', pause: 'Esc always works for P1' };
+      { const c0 = CO.sel && CO.sel.chars && CO.sel.chars[0]; if (c0 === 'keith') Object.assign(HINT, { left: 'Move (also faces him)', s1: 'Laser Lure (zombies chase it)', s2: 'Catgirl Call-Out (holo ally)', s3: 'Nine Lives (revive / shield)' }); else if (c0 === 'weisheng') Object.assign(HINT, { left: 'Move (also faces him)', s1: 'Garage Tune-Up', s2: 'Emergency Brake', s3: 'Hairpin Drift' }); }
       for (let r = 0; r < 13; r++) {
         const y = 168 + r * 31; this.labels.push(txt(this, 60, y + 3, 18, '#ffe9a8')); this.hints.push(txt(this, 1010, y + 5, 14, '#9aa7c7'));
         const row = []; for (let c = 0; c < 2; c++) {
@@ -156,7 +158,7 @@
       this.labels.forEach((l, r) => l.setVisible(!touch && r < n)); this.hints.forEach((l, r) => l.setVisible(!touch && r < n)); this.hdr.forEach(h => h.setVisible(!touch));
       this.hdr[1].setText(i === 2 ? 'BUTTON 1' : 'KEY 1'); this.hdr[2].setText(i === 2 ? 'BUTTON 2' : 'KEY 2');
       this.info.setVisible(touch);
-      if (touch) this.info.setText('TOUCH CONTROLS (phones & tablets)\n\n• Left thumb: drag anywhere on the left half = move stick.\n• Right side: ATK, HVY, JUMP and DASH buttons; coffee / stapler / briefcase icons = skills 1-3; the clock icon = Clock Out when the meter is full.\n• II (top right) pauses.\n\nTouch buttons are fixed. Turn them on or off in SETTINGS (Auto / On / Off).');
+      if (touch) this.info.setText('TOUCH CONTROLS (phones & tablets)\n\n• Left thumb: drag anywhere on the left half = move stick.\n• Right side: ATK, HVY, JUMP (tap again in mid-air = double jump) and DASH buttons; coffee / stapler / briefcase icons = skills 1-3; the clock icon = Clock Out when the meter is full.\n• II (top right) pauses.\n\nTouch buttons are fixed. Turn them on or off in SETTINGS (Auto / On / Off).');
       this.say(i === 1 ? 'P2 shares this keyboard in co-op. Defaults never overlap with P1.' : i === 2 ? 'Pads 1-5 are players 1-5. All pads use this one button layout. Sticks / D-pad move. A / B stay confirm / back in menus.' : i === 0 ? 'Solo play: arrow keys also move P1 (not in 2+ player games).' : '', '#9aa7c7');
       this.draw();
     }

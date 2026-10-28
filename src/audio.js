@@ -78,6 +78,7 @@
         case 'phurt': this.tone(B, t, 300, 0.2, 'sawtooth', 0.2, { slide: 120, lp: 1500 }); break;
         case 'dash': this.noiz(B, t, 0.18, 0.2, 'bandpass', 2000, { fEnd: 500 }); break;
         case 'jump': this.tone(B, t, 300, 0.12, 'triangle', 0.1, { slide: 600 }); break;
+        case 'djump': this.tone(B, t, 520, 0.1, 'triangle', 0.09, { slide: 1100 }); this.tone(B, t + 0.05, 1400, 0.08, 'sine', 0.05, { slide: 1900 }); break;
         case 'slurp': for (let i = 0; i < 4; i++) this.noiz(B, t + i * 0.07, 0.06, 0.15, 'bandpass', 700 + i * 200, { q: 4 }); this.tone(B, t + 0.3, 660, 0.25, 'sine', 0.12, { slide: 990 }); break;
         case 'tick': for (let i = 0; i < 3; i++) this.tone(B, t + i * 0.12, 2000, 0.03, 'square', 0.08); break;
         case 'boom': this.tone(B, t, 120, 0.4, 'sawtooth', 0.25, { slide: 30, lp: 800 }); this.noiz(B, t, 0.35, 0.3, 'lowpass', 900); break;

@@ -24,7 +24,7 @@
       this.surv = { wave: 0 }; this.score = opts.score || 0; this.hpMul = 1; this.dmgMul = 1;
       this.clockRate = this.mode === 'survival' ? 20 : 3;   // v4: story clock 3 game-sec per sec so 7 stages fit 5:59 -> ~7:50 PM
       this.players = []; this.enemies = []; this.projs = []; this.hazards = []; this.pickups = [];
-      this.boss = null; this.zones = []; this.cd = 0; this.events = []; this.frame = 0; this.hitstop = 0; this.timeStop = 0; this.slowmo = 0;
+      this.boss = null; this.zones = []; this.lures = []; this.allies = []; this.cd = 0; this.events = []; this.frame = 0; this.hitstop = 0; this.timeStop = 0; this.slowmo = 0;
       this.nextId = 1; this.state = 'start'; this.st = 0; this.wave = -1; this.queue = []; this.spawnT = 0;
       this.checkpoint = opts.checkpoint || null; this.continues = opts.continues || 0;
       this.gameSec = opts.clock || this.stage.clock || (17 * 60 + 59) * 60; // story starts 5:59 PM
@@ -57,7 +57,7 @@
         this.updateAuras();
         for (const e of this.enemies) this.updateEnemy(e);
         if (this.boss) this.updateBoss(this.boss);
-        this.updateProjs(); this.updateHazards(); this.updateZones(); this.separate();
+        this.updateProjs(); this.updateKeith(); this.updateHazards(); this.updateZones(); this.separate(); this.wallClamp();
       }
       this.updatePickups();
       this.enemies = this.enemies.filter(e => !e.gone);
@@ -71,7 +71,11 @@
       for (const a of ACTIONS) { if (it.p[a]) p.buf[a] = 9; else if (p.buf[a] > 0) p.buf[a]--; }
       if (p.iframes > 0) p.iframes--;
       if (p.flash > 0) p.flash--;
-      p.mp = Math.min(p.maxmp, p.mp + S.mpRegen * DT);
+      const PV = c.passive || {};
+      p.stillT = (p.state === 'idle' && Math.abs(it.mx) < 0.2 && Math.abs(it.my) < 0.2) ? (p.stillT || 0) + 1 : 0;
+      p.mp = Math.min(p.maxmp, p.mp + S.mpRegen * DT * (PV.napAfter && p.stillT >= PV.napAfter ? PV.napMul : 1));
+      if (p.shieldT > 0 && --p.shieldT <= 0) p.shield = 0;
+      if (p.atkUpT > 0) p.atkUpT--;
       p.cds = p.cds.map(v => Math.max(0, v - DT));
       if (p.buff > 0) p.buff -= DT;
       if (p.blind > 0) p.blind--;
@@ -132,6 +136,12 @@
         if (take('light') && p.airChain < 6) this.startMove(p, c.start.air);
         else if (take('heavy')) this.startMove(p, c.start.airHeavy);
         else if (c.passive && c.passive.airDash && !p.airDashed && take('dash')) { p.airDashed = true; this.startDash(p); p.vz = 0; }
+        // v4.2: DOUBLE JUMP, generic for every character (stats.airJumps default 1, stats.jump2 default 85% of jump); once per airtime, reset on landing
+        else if ((p.airJumps || 0) < (S.airJumps == null ? 1 : S.airJumps) && take('jump')) {
+          p.airJumps = (p.airJumps || 0) + 1; p.vz = S.jump2 || S.jump * 0.85; p.djT = 18; p.airChain = 0;
+          this.ev({ t: 'djump', x: p.x, y: p.y, z: p.z, p: p.id });
+        }
+        if (p.djT > 0) { p.djT--; p.rot = -(1 - p.djT / 18) * Math.PI * 2; }
       } else if (p.state === 'move') {
         this.runMove(p, aspd, take, tryGeneric, mx);
       } else if (p.state === 'dash') {
@@ -152,14 +162,15 @@
         if (p.st >= 55 && p.z <= 0) { p.state = 'idle'; p.st = 0; p.iframes = 50; }
       }
       this.physics(p, (p.state === 'move' && p.move && p.move.air && p.mt < (p.move.active[1] || 0)) ? GRAV * 0.55 : GRAV);
-      if (p.z <= 0 && p.state === 'air') { p.state = 'idle'; p.st = 0; p.airDashed = false; this.ev({ t: 'land', x: p.x, y: p.y }); }
+      if (p.z <= 0 && p.state === 'air') { p.state = 'idle'; p.st = 0; p.airDashed = false; p.airJumps = 0; p.djT = 0; this.ev({ t: 'land', x: p.x, y: p.y }); }
     }
 
     physics(o, g) {
+      if (o.kind === 'player' && o.z <= 0 && o.vz <= 0 && o.state !== 'air') { o.airJumps = 0; o.djT = 0; }
       o.x += o.vx * DT; o.y += o.vy * DT;
       if (o.z > 0 || o.vz > 0) { o.z += o.vz * DT; o.vz -= g * DT; if (o.z <= 0) { o.z = 0; o.landed = Math.abs(o.vz); o.vz = 0; } }
       const A = this.A, pad = o.kind === 'boss' ? 30 : 0;
-      if (o.kind === 'player' || o.state !== 'enter') { o.x = clamp(o.x, A.x0 + pad, A.x1 - pad); o.y = clamp(o.y, A.y0, A.y1); }
+      if (o.kind === 'player' || o.state !== 'enter') { o.x = clamp(o.x, A.x0 + pad, A.x1 - pad); { const [a, b] = this.bandAt(o.x); o.y = clamp(o.y, a, b); } }
     }
 
     startMove(p, id) {
@@ -186,11 +197,15 @@
       // lunge during startup->active
       if (m.lunge && f < m.active[1]) { p.vx = p.face * m.lunge * (1 - f / m.active[1]); p.vy *= 0.5; } else if (p.z <= 0) { p.vx *= 0.7; p.vy *= 0.7; }
       if (m.air && !m.dive) { p.vx *= 0.9; p.vy *= 0.8; }
+      if (f >= m.active[0] && pf < m.active[0] && m.proj) {
+        const Q = m.proj;
+        this.projs.push({ id: this.nextId++, kind: 'pbolt', tex: 'kbolt', bolt: true, owner: p, x: p.x + p.face * 70, y: p.y, z: p.z + 120, vx: p.face * Q.speed, vy: 0, life: Q.life, dmg: Q.dmg, kb: Q.kb, stun: Q.stun, pierce: Q.pierce, hit: new Set() });
+      }
       if (f >= m.active[0] && pf < m.active[0]) {
         if (m.selfLaunch) { p.vz = m.selfLaunch; }
         if (m.hover && p.vz < m.hover) p.vz = m.hover;
         const charged = m.charge && p.charge >= 22;
-        this.ev({ t: 'swing', p: p.id, move: p.moveId, x: p.x, y: p.y, z: p.z, face: p.face, arc: m.arc, spin: m.spin, shock: m.shock, charged, overtime: p.overtime, flip: p.flip });
+        this.ev({ t: 'swing', p: p.id, move: p.moveId, x: p.x, y: p.y, z: p.z, face: p.face, arc: m.arc, spin: m.spin, shock: m.shock, charged, overtime: p.overtime, flip: p.flip, beam: m.beam ? m.beam + (charged ? 120 : 0) : 0 });
         if (m.shock) this.ev({ t: 'shake', a: charged ? 0.012 : 0.006, d: charged ? 260 : 140 });
       }
       if (m.dive) {
@@ -224,6 +239,7 @@
         if (!this.hitTest(p, h, e.x, e.y, e.z, e.w, p.face)) continue;
         const last = p.hitMap.get(e.id);
         if (last !== undefined && (!m.every || f - last < m.every)) continue;
+        if (m.maxTargets && last === undefined && p.hitMap.size >= m.maxTargets) continue;
         p.hitMap.set(e.id, f);
         const finisher = m.every && f >= m.active[1] - m.every;
         let dmg = charged ? m.charge.dmg : m.dmg;
@@ -237,7 +253,8 @@
     // generic damage from a player to an enemy/boss
     damage(e, p, o) {
       if (e.state === 'dead') return;
-      let dmg = o.dmg * (p && p.overtime ? 1.25 : 1) * (p && p.buff > 0 ? (p.char.buffMul ? p.char.buffMul.dmg : 1.1) : 1);
+      let dmg = o.dmg * (p && p.overtime ? 1.25 : 1) * (p && p.buff > 0 ? (p.char.buffMul ? p.char.buffMul.dmg : 1.1) : 1) * (p && p.atkUpT > 0 ? (p.atkUpMul || 1.25) : 1);
+      if (p && p.char.passive && p.char.passive.catAtk) dmg *= 1 + p.char.passive.catAtk * this.allies.filter(a => a.owner === p).length;
       if (e.def.kbResist && e.kind === 'enemy') o = Object.assign({}, o, { kb: o.kb * (1 - e.def.kbResist) });
       // v4 frontal blockers (WFH laptop 50%, Umbrella 70%): hit them from behind or with guard-breakers
       if (e.def.block && e.kind === 'enemy' && !o.breaksGuard && e.state !== 'air' && e.state !== 'down' && e.z <= 0 && sign((p ? p.x : o.from) - e.x) === e.face) {
@@ -245,6 +262,7 @@
       }
       const dir = sign(e.x - (o.from !== undefined ? o.from : (p ? p.x : e.x)));
       let fx = ['paper', 'star', 'slime', 'ink', 'coffee'][Math.floor(this.rng() * 5)];
+      if (p && p.char.hitFx) fx = p.char.hitFx;
       // HR Shield blocks frontal hits
       if (e.type === 'hr' && !e.shieldDown && e.state !== 'air' && e.state !== 'down' && sign((p ? p.x : o.from) - e.x) === e.face && e.z <= 0) {
         if (!o.breaksGuard) {
@@ -308,6 +326,11 @@
     hurtPlayer(p, dmg, kb, from, knockdown, stunF) {
       if (!p.alive || p.iframes > 0 || p.state === 'ult' || p.state === 'dash' || p.state === 'down') return false;
       if (this.god) dmg = 0;
+      if (p.shieldT > 0 && p.shield > 0) {   // Keith S3 Nine Lives shield
+        const ab = Math.min(p.shield, dmg); p.shield -= ab; dmg -= ab;
+        if (p.shield <= 0) { p.shieldT = 0; this.ev({ t: 'text', x: p.x, y: p.y, z: 170, msg: 'SHIELD POP', col: '#d6b8ff', small: true }); }
+        if (dmg <= 0) { p.iframes = 10; this.ev({ t: 'block', x: p.x, y: p.y, z: 150, msg: 'NINE LIVES' }); return false; }
+      }
       p.hp -= dmg; this.stats.dmgTaken += dmg; p.flash = 6;
       if (p.overtime) this.ev({ t: 'overtime_end', p: p.id });
       p.combo = 0; p.overtime = false; p.comboT = 0;
@@ -388,7 +411,66 @@
           }
         } else p.rot = 0;
       }
+      if (sk.id === 'lure' && f >= sk.at && pf < sk.at) {
+        let tx = p.x + p.face * sk.range * 0.75; const tg = this.targets().filter(e => e.kind !== 'boss' && sign(e.x - p.x) === p.face && Math.abs(e.x - p.x) < sk.range);
+        if (tg.length) tx = p.x + p.face * Math.min(sk.range, Math.max(160, Math.abs(tg.reduce((a, e) => a + e.x, 0) / tg.length - p.x)));
+        const x = clamp(tx, this.A.x0 + 40, this.A.x1 - 40), [b0, b1] = this.bandAt(x), y = clamp(p.y, b0 + 10, b1 - 10);
+        this.lures.push({ id: this.nextId++, owner: p, x, y, r: sk.r, T: sk.T, t: 0, dps: sk.dps });
+        this.ev({ t: 'lure', x, y, px: p.x, py: p.y, face: p.face }); this.ev({ t: 'sfx', s: 'zap' });
+      }
+      if (sk.id === 'callout' && f >= sk.at && pf < sk.at) {
+        const fl = ['ninja', 'brawl', 'maid'][(p.calloutN = ((p.calloutN || 0) + 1)) % 3 === 1 ? 0 : (p.calloutN % 3 === 2 ? 1 : 2)];
+        const mine = this.allies.filter(a => a.owner === p); if (mine.length >= sk.max) mine[0].T = 0;
+        const [b0, b1] = this.bandAt(p.x);
+        const a = { id: this.nextId++, owner: p, flav: fl, x: p.x + p.face * 80, y: clamp(p.y + 18, b0 + 8, b1 - 8), z: 0, face: p.face, T: sk.T, cd: 20, atkT: 0, vx: 0, vy: 0 };
+        this.allies.push(a); this.ev({ t: 'callout', x: a.x, y: a.y, flav: fl }); this.ev({ t: 'sfx', s: 'ding' });
+      }
+      if (sk.id === 'ninelives' && f >= sk.at && pf < sk.at) {
+        const down = this.players.filter(o => o !== p && !o.alive).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
+        if (down) {
+          down.alive = true; down.hp = Math.round(down.maxhp * sk.revive); down.state = 'idle'; down.st = 0; down.z = 0; down.vz = 0; down.iframes = sk.invuln; down.move = null;
+          this.ev({ t: 'revive', p: down.id, x: down.x, y: down.y }); this.ev({ t: 'text', x: down.x, y: down.y, z: 200, msg: 'NINE LIVES!', col: '#e2c8ff' });
+        } else {
+          for (const o of this.players) if (o.alive && Math.hypot(o.x - p.x, (o.y - p.y) * 1.6) <= sk.r) { o.shield = sk.shield; o.shieldT = sk.shieldT; this.ev({ t: 'shield', p: o.id, x: o.x, y: o.y }); }
+        }
+        this.ev({ t: 'sfx', s: 'ding' });
+      }
       if (p.mt >= sk.total) { p.state = 'idle'; p.st = 0; p.rot = 0; }
+    }
+
+    // ---------- Keith: laser lures + holo catgirl allies ----------
+    updateKeith() {
+      for (const L of this.lures) {
+        L.t++; L.T--;
+        for (const e of this.enemies) {
+          if (e.state === 'dead' || Math.hypot(e.x - L.x, (e.y - L.y) * 1.6) > L.r) continue;
+          e.lureT = 3; e.lureX = L.x; e.lureY = L.y;
+          if (L.t % 30 === 0) this.damage(e, L.owner, { dmg: L.dps * 0.5, kb: 0, stun: 1, from: L.x });
+        }
+      }
+      for (const e of this.enemies) if (e.charmT > 0) e.charmT--;
+      this.lures = this.lures.filter(L => L.T > 0);
+      for (const a of this.allies) {
+        a.T--; if (a.atkT > 0) a.atkT--; if (a.cd > 0) a.cd--;
+        const o = a.owner;
+        if (a.flav === 'maid') { for (const q of this.players) if (q.alive && Math.hypot(q.x - a.x, (q.y - a.y) * 1.6) < 320) q.hp = Math.min(q.maxhp, q.hp + 6 * DT); }
+        let t = null, bd = 1e9; for (const e of this.targets()) { const d = Math.abs(e.x - a.x) + Math.abs(e.y - a.y) * 2; if (d < bd && d < 900) { bd = d; t = e; } }
+        let tx, ty;
+        if (t) { const side = sign(a.x - t.x) || -o.face; tx = t.x + side * (a.flav === 'maid' ? 150 : 70); ty = t.y; a.face = sign(t.x - a.x) || a.face; }
+        else { tx = o.x - o.face * 90; ty = o.y + 20; a.face = o.face; }
+        const dx = tx - a.x, dy = ty - a.y, Ld = Math.hypot(dx, dy), sp = a.flav === 'ninja' ? 430 : 360;
+        if (a.dash > 0) { a.dash--; a.vx = a.face * 900; a.vy = 0; }
+        else if (Ld > 10) { a.vx = dx / Ld * Math.min(sp, Ld * 6); a.vy = dy / Ld * Math.min(sp, Ld * 6) * 0.8; } else { a.vx *= 0.6; a.vy *= 0.6; }
+        a.x += a.vx * DT; a.y += a.vy * DT;
+        a.x = clamp(a.x, this.A.x0 + 20, this.A.x1 - 20); { const [b0, b1] = this.bandAt(a.x); a.y = clamp(a.y, b0, b1); }
+        if (t && a.cd <= 0 && Math.abs(t.x - a.x) < (a.flav === 'maid' ? 200 : 130) && Math.abs(t.y - a.y) < 50) {
+          a.atkT = 14; this.ev({ t: 'catatk', x: a.x, y: a.y, face: a.face, flav: a.flav });
+          if (a.flav === 'ninja') { a.cd = 36; a.dash = 8; for (const e of this.targets()) if (Math.abs(e.x - (a.x + a.face * 90)) < 110 + e.w && Math.abs(e.y - a.y) < 45) this.damage(e, o, { dmg: 10, kb: 120, stun: 18, from: a.x }); }
+          else if (a.flav === 'brawl') { a.cd = 44; for (const e of this.targets()) { const ddx = (e.x - a.x) * a.face; if (ddx > -20 && ddx < 200 && Math.abs(e.y - a.y) < 50) this.damage(e, o, { dmg: 14, kb: 180, stun: 22, from: a.x, breaksGuard: true }); } }
+          else { a.cd = 60; this.damage(t, o, { dmg: 6, kb: 40, stun: 10, from: a.x }); }
+        }
+      }
+      this.allies = this.allies.filter(a => a.T > 0 && a.owner.alive);
     }
 
     startUlt(p) {
@@ -402,7 +484,9 @@
       if (p.mt === u.at) {
         for (const e of this.enemies) if (e.state !== 'dead') { this.damage(e, p, { dmg: u.dmg, kb: u.kb || 300, launch: u.launch || 700, from: p.x, heavy: true }); }
         if (this.boss && this.boss.state !== 'dead' && this.boss.state !== 'intro') this.damage(this.boss, p, { dmg: u.bossDmg, kb: 0, from: p.x, heavy: true, stampText: u.stamp || 'CLOCKED OUT' });
-        this.ev({ t: 'ult_hit', p: p.id }); this.ev({ t: 'shake', a: 0.02, d: 400 });
+        if (u.charm) for (const e of this.enemies) if (e.state !== 'dead' && e.hp > 0) { e.state = 'stun'; e.stun = u.charm; e.st = 0; e.vx = e.vy = 0; e.charmT = u.charm; this.ev({ t: 'charm', x: e.x, y: e.y }); }
+        if (u.teamAtk) for (const o of this.players) if (o.alive) { o.atkUpT = u.teamAtk.T; o.atkUpMul = u.teamAtk.mul; this.ev({ t: 'buff', p: o.id, x: o.x, y: o.y, idol: true }); }
+        this.ev({ t: 'ult_hit', p: p.id, char: p.char.id }); this.ev({ t: 'shake', a: 0.02, d: 400 });
       }
       if (p.mt >= u.total) { p.state = 'idle'; p.st = 0; p.iframes = 30; }
     }
@@ -447,7 +531,12 @@
       } else if (e.state === 'chase') {
         walkPose();
         if (e.type === 'hr' && e.shieldDown > 0) { e.pose = d.frames.hurt; }
-        if (!t) { e.vx *= 0.9; e.vy *= 0.9; }
+        if (e.lureT > 0) {   // Keith S1: chase the laser dot
+          e.lureT--; const dx = e.lureX - e.x, dy = e.lureY - e.y, L = Math.hypot(dx, dy);
+          if (L > 14) { e.vx = dx / L * d.speed * 1.15; e.vy = dy / L * d.speed * 0.9; } else { e.vx *= 0.6; e.vy *= 0.6; e.pose = d.frames.walk; e.rot = Math.sin(e.st * 0.5) * 0.12; }
+          e.face = sign(dx) || e.face;
+        }
+        else if (!t) { e.vx *= 0.9; e.vy *= 0.9; }
         else {
           const side = sign(e.x - t.x), tx = t.x + side * (d.ai === 'ranged' ? d.keep : (d.stand || at.range * 0.8)), ty = t.y + e.slotY * (d.ai === 'ranged' ? 2 : 0.4);
           const dx = tx - e.x, dy = ty - e.y, L = Math.hypot(dx, dy);
@@ -607,7 +696,7 @@
     }
     startAura(b) {   // scripted, unwinnable lobby encounter: the CEO becomes immune and seals the exit
       if (b.state === 'aura' || b.state === 'done') return;
-      b.state = 'aura'; b.st = 0; b.vx = b.vy = 0; this.hazards.length = 0; this.projs = this.projs.filter(q => q.kind === 'staple' || q.kind === 'case'); this.zones.length = 0;
+      b.state = 'aura'; b.st = 0; b.vx = b.vy = 0; this.hazards.length = 0; this.projs = this.projs.filter(q => q.kind === 'staple' || q.kind === 'case' || q.kind === 'pbolt'); this.zones.length = 0;
       for (const e of this.enemies) { this.ev({ t: 'kill', x: e.x, y: e.y, z: e.z, type: e.type }); e.gone = true; }
       for (const p of this.players) p.iframes = 400;
       this.ev({ t: 'banner', msg: 'MONDAY AURA', sub: 'Your stapler does... nothing?!' }); this.ev({ t: 'sfx', s: 'boom' }); this.ev({ t: 'shake', a: 0.015, d: 500 });
@@ -757,7 +846,7 @@
     killBoss(b) {
       b.state = 'dead'; b.st = 0; b.hp = 0; this.stats.kos++; this.score += 5000;
       for (const e of this.enemies) { this.ev({ t: 'kill', x: e.x, y: e.y, z: e.z, type: e.type }); e.gone = true; }
-      this.hazards.length = 0; this.projs = this.projs.filter(p => p.kind === 'staple' || p.kind === 'case');
+      this.hazards.length = 0; this.projs = this.projs.filter(p => p.kind === 'staple' || p.kind === 'case' || p.kind === 'pbolt');
       this.ev({ t: 'bossdown', x: b.x, y: b.y }); this.ev({ t: 'bark', x: b.x, y: b.y, z: 330, msg: b.def.defeat[0], boss: true });
       this.slowmo = 90;
     }
@@ -775,6 +864,15 @@
             }
             if (Math.abs(e.x - q.x) < e.w + 18 && Math.abs(e.y - q.y) < 34 && Math.abs(e.z + 80 - q.z) < 110) {
               q.hit.add(e.id); this.damage(e, q.owner, { dmg: q.dmg, kb: 40, stun: q.stun, from: q.x - sign(q.vx) * 50, pin: e.kind !== 'boss', breaksGuard: true });
+              if (--q.pierce <= 0) { q.life = 0; break; }
+            }
+          }
+        } else if (q.kind === 'pbolt') {
+          q.x += q.vx * DT; q.y += q.vy * DT;
+          for (const e of this.targets()) {
+            if (q.hit.has(e.id)) continue;
+            if (Math.abs(e.x - q.x) < e.w + 30 && Math.abs(e.y - q.y) < 40 && Math.abs(e.z + 90 - q.z) < 130) {
+              q.hit.add(e.id); this.damage(e, q.owner, { dmg: q.dmg, kb: q.kb, stun: q.stun, from: q.x - sign(q.vx) * 50 });
               if (--q.pierce <= 0) { q.life = 0; break; }
             }
           }
@@ -846,6 +944,24 @@
         if (k.t > 900) k.done = true;
       }
       this.pickups = this.pickups.filter(k => !k.done);
+    }
+
+    // v4.2: per-x band (S.zones: [{x0, x1, y0, y1, ramp}]) — e.g. the s4 lift cab whose floor starts much lower than the lobby's
+    bandAt(x) {
+      const A = this.A, Z = this.scroll && this.stage.zones; let y0 = A.y0, y1 = A.y1;
+      if (Z) for (const z of Z) {
+        const r = z.ramp || 1, k = x < z.x0 - r ? 0 : x < z.x0 ? (x - z.x0 + r) / r : x <= z.x1 ? 1 : 0;
+        if (k > 0) { y0 = Math.max(y0, y0 + (z.y0 - y0) * k); y1 = y1 + (z.y1 - y1) * k; }
+      }
+      return [y0, y1];
+    }
+    // v4.2: nobody touches the wall — final clamp of every actor's feet into the walkable band (after separate/knockback/dash)
+    wallClamp() {
+      const A = this.A;
+      const f = o => { const [a, b] = this.bandAt(o.x); o.y = o.state === 'enter' && o.kind !== 'player' ? Math.max(o.y, a) : clamp(o.y, a, b); };
+      for (const o of this.players) f(o);
+      for (const o of this.enemies) f(o);
+      if (this.boss) f(this.boss);
     }
 
     separate() {
@@ -923,6 +1039,7 @@
       const S = this.stage, en = S.encounters[i]; this.enc = i; this.checkpoint = i; this.locked = true;
       this.view.x = clamp(en.x - 640, 0, S.len - 1280);
       this.A.x0 = this.view.x + 40; this.A.x1 = this.view.x + 1240; this.scrollMin = this.view.x;
+      if (en.cab && S.cab) Object.assign(this.A, S.cab); else { this.A.y0 = S.band[0]; this.A.y1 = S.band[1]; }
       this.wave = -1; this.curWaves = en.waves; this.cd = en.countdown ? en.countdown * 60 : 0; this.dinged = false;
       this.ev({ t: 'lock', i, x: this.view.x, label: en.label, countdown: en.countdown || 0, cab: !!en.cab });
       if (en.waves.length) this.nextWave(); else this.toBoss(en);
@@ -931,7 +1048,7 @@
       const nx = this.stage.encounters[this.enc + 1];
       if (go && nx && nx.chain) { this.ev({ t: 'floor', label: nx.label }); return this.lock(this.enc + 1); }   // lift cab: floor stops chain straight into the next wave
       this.locked = false; this.state = 'roam'; this.st = 0;
-      const S = this.stage, nxt = S.encounters[this.enc + 1];
+      const S = this.stage, nxt = S.encounters[this.enc + 1]; this.A.y0 = S.band[0]; this.A.y1 = S.band[1];
       if (go) this.ev({ t: 'go', label: nxt ? '' : S.exitLabel });
     }
     finish(scene) {

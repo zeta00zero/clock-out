@@ -17,6 +17,10 @@
     tex('p_coffee', 14, 14, g => { g.fillStyle(0x6b3e1e); g.fillCircle(7, 7, 6); g.fillStyle(0xb07a4a); g.fillCircle(5, 5, 2); });
     tex('p_slime', 24, 24, g => { g.fillStyle(0x8ee35a, 0.9); g.fillCircle(12, 12, 11); g.fillStyle(0xd6ff9e, 0.9); g.fillCircle(8, 8, 4); });
     tex('p_star', 26, 26, g => { g.fillStyle(0xffe14d); const pts = []; for (let i = 0; i < 10; i++) { const r = i % 2 ? 5 : 12, a = -Math.PI / 2 + i * Math.PI / 5; pts.push({ x: 13 + Math.cos(a) * r, y: 13 + Math.sin(a) * r }); } g.fillPoints(pts, true); g.lineStyle(2, 0x9a6a00); g.strokePoints(pts, true); });
+    tex('p_paw', 26, 26, g => { g.fillStyle(0xb48cff); g.fillEllipse(13, 17, 13, 11); g.fillCircle(5, 9, 3.4); g.fillCircle(10, 5, 3.4); g.fillCircle(16, 5, 3.4); g.fillCircle(21, 9, 3.4); g.fillStyle(0xf1e6ff); g.fillEllipse(11, 15, 4, 3); });
+    tex('p_heart', 24, 22, g => { g.fillStyle(0xff9ad8); g.fillCircle(7, 8, 6); g.fillCircle(17, 8, 6); g.fillTriangle(1.5, 10, 22.5, 10, 12, 21); g.fillStyle(0xffe0f4); g.fillCircle(6, 6, 2); });
+    tex('kbolt', 70, 16, g => { for (let i = 0; i < 4; i++) { g.fillStyle([0x6b3dd6, 0x9b6bff, 0xc9a8ff, 0xffffff][i], 0.9); g.fillEllipse(40 - i * 2, 8, 62 - i * 14, 14 - i * 3); } });
+    tex('laserdot', 40, 40, g => { for (let i = 10; i > 0; i--) { g.fillStyle(0xff3040, 0.08); g.fillCircle(20, 20, i * 2); } g.fillStyle(0xff4050); g.fillCircle(20, 20, 4); g.fillStyle(0xffffff); g.fillCircle(19, 19, 1.6); });
     tex('p_spark', 8, 26, g => { g.fillStyle(0xffffff); g.fillEllipse(4, 13, 6, 24); });
     tex('p_dot', 8, 8, g => { g.fillStyle(0xffffff); g.fillCircle(4, 4, 4); });
     tex('staple', 30, 12, g => { g.lineStyle(4, 0xd8dee8); g.beginPath(); g.moveTo(2, 2); g.lineTo(2, 10); g.lineTo(28, 10); g.lineTo(28, 2); g.strokePath(); g.lineStyle(1, 0x5c6470); g.strokeRect(0, 0, 30, 12); });
@@ -43,7 +47,7 @@
 
   class FX {
     constructor(scene) {
-      this.s = scene; this.parts = []; this.pool = []; this.arcs = []; this.texts = []; this.tpool = [];
+      this.s = scene; this.parts = []; this.pool = []; this.arcs = []; this.beams = []; this.texts = []; this.tpool = [];
       this.gfx = scene.add.graphics().setDepth(5000).setBlendMode(Phaser.BlendModes.ADD);
     }
     part(tex, x, y, z, o = {}) {
@@ -60,12 +64,19 @@
         if (kind === 'paper') { o.grav = 260; o.drag = 0.95; o.flut = 1; o.life = 60 + Math.random() * 40; o.sc = 0.7 + Math.random() * 0.6; }
         if (kind === 'star') { o.grav = 500; o.sc = 0.6 + Math.random() * 0.5; o.sc1 = 0.1; }
         if (kind === 'slime') { o.grav = 0; o.vz = 40; o.vx *= 0.3; o.vy *= 0.3; o.sc = 0.6; o.sc1 = 1.8; o.life = 24; }
+        if (kind === 'paw') { o.grav = 380; o.sc = 0.7 + Math.random() * 0.5; o.sc1 = 0.3; o.vr *= 0.3; }
+        if (kind === 'heart') { o.grav = -60; o.vz = 90 + Math.random() * 90; o.vx *= 0.25; o.vy *= 0.2; o.sc = 0.8; o.sc1 = 1.2; o.vr = 0; o.life = 50; }
         if (kind === 'ink' || kind === 'coffee') { o.grav = 1300; o.sc = 0.6 + Math.random() * 0.7; }
-        if (kind === 'spark') { o.grav = 0; o.add = true; o.tint = power > 1.2 ? 0xffd34d : 0x9ff8ff; o.life = 10 + Math.random() * 8; o.vz = 0; o.sc = 0.8; o.sc1 = 0.2; o.drag = 0.85; o.rot = a + Math.PI / 2; o.vr = 0; o.vx = Math.cos(a) * sp * 2; o.vy = Math.sin(a) * sp * 1.4; }
+        if (kind === 'spark') { o.grav = 0; o.add = true; o.tint = this.sparkTint || (power > 1.2 ? 0xffd34d : 0x9ff8ff); o.life = 10 + Math.random() * 8; o.vz = 0; o.sc = 0.8; o.sc1 = 0.2; o.drag = 0.85; o.rot = a + Math.PI / 2; o.vr = 0; o.vx = Math.cos(a) * sp * 2; o.vy = Math.sin(a) * sp * 1.4; }
         this.part(kind === 'spark' ? 'p_spark' : 'p_' + kind, x, y, z, o);
       }
     }
     hit(x, y, z, kind, heavy, gold) {
+      if (kind === 'paw') {   // Keith: purple sparkle + paw prints (no blood)
+        this.sparkTint = 0xd2b0ff; this.burst('spark', x, y, z, heavy ? 10 : 6, 1); this.sparkTint = 0;
+        this.burst('paw', x, y, z, heavy ? 5 : 3, heavy ? 1.1 : 0.8);
+        this.part('glow', x, y, z, { grav: 0, life: 8, sc: heavy ? 1.3 : 0.8, sc1: 0.2, add: true, tint: 0xb48cff, vr: 0 }); return;
+      }
       this.burst('spark', x, y, z, heavy ? 10 : 6, gold ? 1.5 : 1);
       this.burst(kind, x, y, z, heavy ? 8 : 4, heavy ? 1.3 : 0.9);
       if (Math.random() < 0.5) this.burst('star', x, y, z + 20, heavy ? 3 : 1, 0.6);
@@ -78,6 +89,7 @@
     dust(x, y, n = 3, col = 0xcfc4b0) { for (let i = 0; i < n; i++) this.part('mist', x + (Math.random() - 0.5) * 30, y, 6, { grav: 0, vx: (Math.random() - 0.5) * 80, vy: (Math.random() - 0.5) * 20, vz: 20 + Math.random() * 30, life: 26, sc: 0.18, sc1: 0.5, tint: col, drag: 0.94 }); }
     ringAt(x, y, r, col, life = 14, grow = false) { const full = r * 2 / 240, p = this.part('ring', x, y, 0, { grav: 0, life, sc: grow ? full * 0.15 : full, sc1: full, rot: 0, add: true, tint: col }); p.flat = true; p.rot = 0; return p; }
     shock(x, y, col, big) { const p = this.part('ring', x, y, 0, { grav: 0, life: 18, sc: 0.2, sc1: big ? 1.8 : 1.1, vr: 0, rot: 0, add: true, tint: col }); p.flat = true; this.burst('paper', x, y, 10, big ? 10 : 5, 1); }
+    beam(x, y, z, face, len, col, w) { this.beams.push({ x, y, z, face, len, col: col || 0xc58cff, w: w || 10, t: 0, T: 10 }); }
     arc(x, y, z, face, a0, a1, o = {}) { this.arcs.push({ x, y, z, face, a0, a1, t: 0, T: o.T || 11, rx: o.rx || 130, ry: o.ry || 62, col: o.col || 0x5ff6ff, vert: !!o.vert, w: o.w || 26, follow: o.follow }); }
     text(x, y, z, msg, o = {}) {
       let t = this.tpool.pop();
@@ -123,6 +135,13 @@
         const pts = outer.concat(inner.reverse());
         g.fillStyle(a.col, 0.55 * (1 - k)); g.fillPoints(pts, true);
         g.lineStyle(3, 0xffffff, 0.9 * (1 - k)); g.strokePoints(outer, false);
+      }
+      for (let i = this.beams.length - 1; i >= 0; i--) {
+        const b = this.beams[i]; b.t++; if (b.t > b.T) { this.beams.splice(i, 1); continue; }
+        const k = b.t / b.T, x0 = b.x + b.face * 62, y0 = b.y - b.z - 128, x1 = x0 + b.face * b.len * Math.min(1, k * 4);
+        g.lineStyle(b.w * 2.2 * (1 - k * 0.6), b.col, 0.35 * (1 - k)); g.lineBetween(x0, y0, x1, y0);
+        g.lineStyle(b.w * (1 - k * 0.6), 0xe8dcff, 0.9 * (1 - k)); g.lineBetween(x0, y0, x1, y0);
+        g.fillStyle(0xffffff, 0.9 * (1 - k)); g.fillCircle(x1, y0, b.w * 0.9);
       }
       for (let i = this.texts.length - 1; i >= 0; i--) {
         const q = this.texts[i]; q.life--;

@@ -114,7 +114,7 @@
     create(d) {
       d = d || {}; this.add.image(640, 360, 'bg_title').setDisplaySize(1280, 720);
       const sh = this.add.graphics(); sh.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0, 0.85, 0); sh.fillRect(0, 280, 700, 440);
-      CO.audio.play('title'); this.fresh = new CO.Fresh(this, d.fromIntro ? 350 : 0);
+      CO.audio.play('title'); this.fresh = new CO.Fresh(this, d.fromIntro ? 400 : 0);
       const arenaName = () => CO.STAGES[CO.sel.arena].arenaName, coopN = this.coopN = Math.max(2, Math.min(CO.MAX_PLAYERS, CO.sel.chars.length));
       this.menu = new Menu(this, 250, 330, [
         { label: 'STORY', sub: '(CLOCK IN)', size: 30, cb: () => this.pick(1, { scene: 'Intro' }) },
@@ -127,8 +127,9 @@
       ], { w: 380, h: 46, gap: 8 });
       const B = CO.save.best();
       this.add.text(70, 704, (B.score ? 'SURVIVAL BEST: ' + B.score.toLocaleString() + ' pts · wave ' + B.wave + '   ·   ' : '') + (CO.isTouchDevice() ? 'Tap to choose.' : 'WASD/Arrows + Enter  ·  Gamepad OK'), CO.style(17, '#cfe8ff')).setOrigin(0, 0.5);
-      this.add.text(1265, 708, 'v4.1 · 7-stage Story + Survival · Lemon & Weisheng · 1-5 player co-op', CO.style(14, '#9aa7c7')).setOrigin(1, 1);
+      this.add.text(1265, 708, 'v4.2 · 7-stage Story + Survival · Lemon, Weisheng & Keith · 1-5 player co-op', CO.style(14, '#9aa7c7')).setOrigin(1, 1);
       if (!d.seamless) this.cameras.main.fadeIn(d.fromIntro ? 180 : 400);
+      else { const cam = this.cameras.main; cam.setZoom(1.05); this.tweens.add({ targets: cam, zoom: 1, duration: 1500, delay: 1000, ease: 'Cubic.out' }); }   // v4.2 intro #5: title + menu settle in
       this.events.on('resume', () => { CO.menuInput.update(); });
     }
     // v4: every mode goes through the fighter pick (remembers the last choice)
@@ -153,7 +154,7 @@
       this.lock = this.add.text(860, 330, '🔒 LOCKED', CO.style(48, '#ffffff')).setOrigin(0.5);
       const items = CO.STORY_ORDER.map((id, k) => { const S = CO.STAGES[id], g = P.grades[id]; return { label: (k + 1) + '. ' + S.name, sub: g ? '[' + g + ']' : (k < P.unlocked ? '' : '🔒'), size: 22, disabled: k >= P.unlocked, cb: () => this.start(id) }; });
       // v4: fighter / co-op line (cycles LEMON -> WEISHENG -> CO-OP 2P -> ...) and the two Survival arenas
-      const IDS = Object.keys(CO.CHARACTERS), opts = IDS.map(c => [c]).concat([IDS.slice(0, 2)]), cur = () => Math.max(0, opts.findIndex(o => o.join() === CO.sel.chars.join()));
+      const IDS = Object.keys(CO.CHARACTERS), opts = IDS.map(c => [c]).concat([IDS.slice(0, 2)], IDS.length > 2 ? [IDS.slice(0, 3)] : []), cur = () => Math.max(0, opts.findIndex(o => o.join() === CO.sel.chars.join()));
       const fl = () => CO.sel.chars.length > 1 ? 'CO-OP · ' + CO.sel.chars.map(c => CO.CHARACTERS[c].name).join(' + ') : 'FIGHTER · ' + CO.CHARACTERS[CO.sel.chars[0]].name;
       items.push({ label: () => '◀ ' + fl() + ' ▶', size: 18, adjust: d => { CO.sel.chars = opts[(cur() + d + opts.length) % opts.length].slice(); CO.saveSel(); }, cb: () => this.scene.start('CharSelect', { n: CO.sel.chars.length, next: { scene: 'StageSelect' }, back: 'StageSelect' }) });
       items.push({ label: () => 'SURVIVAL  ◀ ' + CO.STAGES[CO.sel.arena].arenaName + ' ▶', size: 18, adjust: d => { CO.sel.arena = ARN[(ARN.indexOf(CO.sel.arena) + d + ARN.length) % ARN.length]; CO.saveSel(); }, cb: () => { this.cameras.main.fadeOut(250); this.time.delayedCall(270, () => CO.enterGame(this, 'Game', { stage: CO.sel.arena }, { back: 'StageSelect', label: 'Survival — ' + CO.STAGES[CO.sel.arena].arenaName })); } });
