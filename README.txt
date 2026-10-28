@@ -1,11 +1,11 @@
-CLOCK OUT!  —  An Arcane Duel Chronicles Story   (v4.1: layered parallax maps; v4: 7 stages, anime map plates, Weisheng, local co-op, phone-throw intro)
+CLOCK OUT!  —  An Arcane Duel Chronicles Story   (v4.2: new fighter KEITH, wall/floor layers, rebuilt apartment, wall-safe walk band, double jump; v4.1: layered parallax maps; v4: 7 stages, anime map plates, Weisheng, local co-op, phone-throw intro)
 
 HOW TO PLAY
   Unzip, then double-click index.html (Chrome, Edge, Firefox or Safari). No server or internet needed.
   On a phone, put the folder on any static host (for example GitHub Pages) and play in landscape.
 
-START   A short phone-throw intro plays before the title (any key / tap skips it; the skip press never reaches the menu).
-        STORY, SURVIVAL and CO-OP open a CHARACTER SELECT: LEMON or WEISHENG (co-op: each player picks, no duplicates while a fresh fighter is free).
+START   A 5.6 s phone-smash intro plays before the title (desk -> throw -> cracked screen -> ~90 glass shards fall away onto the live menu; ~40 on phones). Any key, tap or pad button skips it; the skip press never reaches the menu.
+        STORY, SURVIVAL and CO-OP open a CHARACTER SELECT: LEMON, WEISHENG or KEITH (co-op: each player picks, no duplicates while a fresh fighter is free).
 
 KEYBOARD (defaults - every key can be changed: TITLE -> CONTROLS, or CONTROLS / KEY BINDING on the How to Play screen)
   P1: Move WASD   Light J / Z   Heavy K / X (hold to charge)   Jump Space / C   Dash L / Shift
@@ -13,12 +13,18 @@ KEYBOARD (defaults - every key can be changed: TITLE -> CONTROLS, or CONTROLS / 
   P2: Move arrows   Light ,   Heavy .   Jump /   Dash Right-Shift   Skills 7 8 9   Ultimate 0
   P3-P5: gamepads 3-5.   GAMEPAD  X light, Y heavy, A jump, B/RT dash, LB/RB/LT skills, R3 ultimate, Start pause (pads 1-5)
   TOUCH   Left thumb = floating stick; right side: ATK / HVY / JUMP / DASH, three skill icons and the ultimate. II pauses.
+  DOUBLE JUMP  press Jump again while airborne (once per jump, slightly lower, with a flip). Works on keyboard, gamepad and the touch JUMP button; air attacks still work after it.
 
 FIGHTERS
   LEMON     stapler bruiser. ATK x4 = Memo > Cc > Bcc > Spin Cycle. HEAVY = Hard Copy (hold: Final Draft); J J K Promotion launcher,
             JUMP+ATK juggle, HEAVY in the air = Hole Punch. Skills: Coffee Rush, Staple Barrage, Briefcase Spin. Ultimate: CLOCK OUT.
   WEISHENG  suit, key fob, fleet lug wrench - fast skirmisher / support. ATK x4 = Jab > Cross > Sweep > Spin Out. HEAVY = Torque Slam (hold: Full Tank),
             Jack Up launcher, Flat Tyre, air-dash, Overtake lunge. Skills: Garage Tune-Up (heals), Emergency Brake (stun), Hairpin Drift. Ultimate: HYPERION ZERO.
+  KEITH     after-hours AV tech, Paw-Click Laser Presenter - ranged summoner / support. ATK x4 = Aim Jab > Laser Whip > Pointer Shot (piercing bolt)
+            > Spin Sweep. HEAVY = Hold-Click beam (hold to charge), Sky Pointer in the air, DASH+ATK = Next Slide. Passive Cat Nap: stand still 1.5 s
+            = double battery regen; each holo catgirl gives +5% ATK. Skills: Laser Lure (zombies chase the dot), Catgirl Call-Out (holo ally 8 s,
+            ninja / brawler / cafe maid, max 2), Nine Lives (revive a downed ally at 40% or shield the team). Ultimate: NYAN IDOL SHOWTIME (charm + team ATK).
+            Joins the story at the 2F projector.
 
 GOAL      Escape the office and reach STARSHIFT before 8 PM. Story clock: 5:59 PM at the 3rd floor, about 7:50 PM at the Streets finish.
 
