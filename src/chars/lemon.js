@@ -1,6 +1,6 @@
 // Clock Out! — character data: LEMON (Player 1 default).
 // Each playable character lives in its own file under src/chars/ and registers itself in
-// CO.CHARACTERS. Co-op (up to 5 players) just adds more files like this one — the engine reads
+// CO.CHARACTERS. Co-op (up to 4 players) just adds more files like this one — the engine reads
 // stats, poses, moves, skills and ult from here; nothing in sim.js is Lemon-specific.
 window.CO = window.CO || {};
 (function (CO) {
