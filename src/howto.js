@@ -57,7 +57,7 @@
     constructor() { super('HowTo'); }
     create(d) {
       d = this.d = d || {}; const info = this.info = !d.target; this.leaving = false;
-      const inPlay = (d.target && d.target.data && d.target.data.chars) || CO.sel.chars, np = Math.max(1, Math.min(CO.MAX_PLAYERS || 5, CO.params.players || 1, 9) , inPlay.length), two = np > 1;
+      const inPlay = (d.target && d.target.data && d.target.data.chars) || CO.sel.chars, np = Math.min(CO.MAX_PLAYERS || 4, Math.max(1, Math.min(CO.MAX_PLAYERS || 4, CO.params.players || 1, 9) , inPlay.length)), two = np > 1;
       bgFor(this);
       txt(this, 40, 18, 44, '#ffd34d').setText('HOW TO PLAY');
       txt(this, 40, 70, 18, '#cfe8ff').setText(info ? 'Your live key bindings, the items you can pick up, and a few combos.' : (d.label ? 'Up next: ' + d.label : 'Get ready!') + (two ? '   ·   ' + np + ' players' : ''));
@@ -117,7 +117,7 @@
       bgFor(this);
       txt(this, 40, 14, 44, '#ffd34d').setText('CONTROLS');
       txt(this, 40, 66, 17, '#cfe8ff').setText('Pick an action, press ENTER (or click), then press the new key. Esc cancels. Del clears. Used keys are swapped.');
-      this.tabs = ['KEYBOARD  P1', 'KEYBOARD  P2', 'GAMEPAD  1-5', 'TOUCH'].map((n, i) => {
+      this.tabs = ['KEYBOARD  P1', 'KEYBOARD  P2', 'GAMEPAD  1-4', 'TOUCH'].map((n, i) => {
         const x = 40 + i * 215, g = this.add.graphics(), t = txt(this, x + 100, 107, 19, '#fff').setText(n).setOrigin(0.5);
         const z = this.add.zone(x + 100, 107, 205, 40).setInteractive({ useHandCursor: true }); z.on('pointerdown', () => this.setTab(i)); return { x, g, t };
       });
@@ -160,7 +160,7 @@
       this.hdr[1].setText(i === 2 ? 'BUTTON 1' : 'KEY 1'); this.hdr[2].setText(i === 2 ? 'BUTTON 2' : 'KEY 2');
       this.info.setVisible(touch);
       if (touch) this.info.setText('TOUCH CONTROLS (phones & tablets)\n\n• Left thumb: drag anywhere on the left half = move stick.\n• Right side: ATK, HVY, JUMP (tap again in mid-air = double jump) and DASH buttons; coffee / stapler / briefcase icons = skills 1-3; the clock icon = Clock Out when the meter is full.\n• II (top right) pauses.\n\nTouch buttons are fixed. Turn them on or off in SETTINGS (Auto / On / Off).');
-      this.say(i === 1 ? 'P2 shares this keyboard in co-op. Defaults never overlap with P1.' : i === 2 ? 'Pads 1-5 are players 1-5. All pads use this one button layout. Sticks / D-pad move. A / B stay confirm / back in menus.' : i === 0 ? 'Solo play: arrow keys also move P1 (not in 2+ player games).' : '', '#9aa7c7');
+      this.say(i === 1 ? 'P2 shares this keyboard in co-op. Defaults never overlap with P1.' : i === 2 ? 'Pads 1-4 are players 1-4 (4 players max). All pads use this one button layout. Sticks / D-pad move. A / B stay confirm / back in menus.' : i === 0 ? 'Solo play: arrow keys also move P1 (not in 2+ player games).' : '', '#9aa7c7');
       this.draw();
     }
     say(s, col = '#7dff8a') { this.status.setText(s).setColor(col); this.msgT = 400; }

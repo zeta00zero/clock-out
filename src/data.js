@@ -2,8 +2,8 @@
 // so new Arcane Duel characters / floors plug in without touching the engine.
 window.CO = window.CO || {};
 (function (CO) {
-  CO.MAX_PLAYERS = 5;
-  CO.PLAYER_COLORS = [0xffd23f, 0x6fd3ff, 0xff8fc8, 0x8ee35a, 0xb98cff];   // P1..P5 indicator colours
+  CO.MAX_PLAYERS = 4;   // v5.1: max 4 players everywhere (local + online)
+  CO.PLAYER_COLORS = [0xffd23f, 0x6fd3ff, 0xff8fc8, 0x8ee35a, 0xb98cff];   // P1..P4 (5th colour unused) indicator colours
 
 
   // v4: poses are namespaced per character (lem_*, ws_*); hit boxes authored for ~190 px Lemon are scaled up for the 240 px redraw.

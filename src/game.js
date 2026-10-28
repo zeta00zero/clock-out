@@ -132,12 +132,12 @@
     drawExit(S) {
       if (S.exit > S.len) return;
       if (S.lobbyLift && S.door) {   // v4.3: roof access is through the cab's open door
-        this.exitSign = this.add.text(S.exit + 40, S.cab.y1 - 22, S.exitLabel + ' →', CO.style(26, '#7dff8a')).setOrigin(0.5).setDepth(1.5); return;
+        this.exitSign = this.add.text(S.exit + 40, S.cab.y1 - 22, ((S.num === 7 && CO.story(CO.curChars).exit7) || S.exitLabel) + ' →', CO.style(26, '#7dff8a')).setOrigin(0.5).setDepth(1.5); return;
       }
       const x = S.exit + 40, y0 = S.band[0] - 10, g = this.add.graphics().setDepth(2);
       g.fillStyle(0x7dff8a, 0.10); g.fillRect(x - 70, y0 - 220, 140, S.band[1] - y0 + 220);
       g.lineStyle(4, 0x7dff8a, 0.7); g.strokeRect(x - 70, y0 - 220, 140, 220);
-      this.exitSign = this.add.text(x, S.band[1] - 26, S.exitLabel + ' →', CO.style(26, '#7dff8a')).setOrigin(0.5).setDepth(1.5);  // v3.1: on the floor, no longer over door signs
+      this.exitSign = this.add.text(x, S.band[1] - 26, ((S.num === 7 && CO.story(CO.curChars).exit7) || S.exitLabel) + ' →', CO.style(26, '#7dff8a')).setOrigin(0.5).setDepth(1.5);  // v3.1: on the floor, no longer over door signs
       this.tweens.add({ targets: this.exitSign, alpha: 0.45, duration: 600, yoyo: true, repeat: -1 });
     }
     gate(key, frames) { const f = this.sim.frame; if (this.textGate[key] && f - this.textGate[key] < frames) return false; this.textGate[key] = f; return true; }
@@ -351,7 +351,7 @@
       this.fx.update(1 / 60);
       this.updateCamera();
     }
-    // Camera: follows the centroid of living players and zooms out to fit up to 5 of them.
+    // Camera: follows the centroid of living players and zooms out to fit up to 4 of them.
     // Story: locks to the encounter screen; never scrolls back past sim.scrollMin.
     updateCamera() {
       const sim = this.sim, cam = this.cameras.main;
@@ -506,7 +506,7 @@
       this.game_ = this.scene.get('Game'); const sim0 = this.game_.sim, P = sim0.players, n = this.n = P.length, coop = this.coop = n > 1;
       const g = this.g = this.add.graphics();
       const S = this.S = this.game_.S;
-      // ---- per-player panels: P1 big (top-left), P2 compact-full below it, P3..P5 mini rows
+      // ---- per-player panels: P1 big (top-left), P2 compact-full below it, P3..P4 mini rows
       this.pan = P.map((p, k) => {
         const c = p.char, col = CO.PLAYER_COLORS[k] || 0xffffff, o = { p, k, c, col };
         if (k === 0) {
@@ -581,6 +581,11 @@
     }
     badge(x, y, txt, col) { this.add.rectangle(x + 14, y + 11, 28, 20, col).setStrokeStyle(2, 0x10162e); this.add.text(x + 14, y + 11, txt, CO.style(13, '#10162e')).setOrigin(0.5); }
     setSkillsVisible(v) { this.skills.forEach(s => { s.ic.setVisible(v); s.kt.setVisible(v); s.nm.setVisible(v); }); this.skG.setVisible(v); }
+    // v5.1 co-op: the other story characters' boss replies play after the lead's
+    bossExtra(sim) {
+      if (!sim.boss || sim.mode === 'survival') return; const ex = CO.storyExtras(CO.curChars).slice(0, 3), L = ex.map(c => CO.STORIES[c].boss[sim.boss.type] ? CO.CHARACTERS[c].name + ': "' + CO.STORIES[c].boss[sim.boss.type] + '"' : '').filter(Boolean);
+      window.__bossExtra = L; if (L.length) this.time.delayedCall(2900, () => this.show('BOSS', L.join('\n'), '#ff9a2e', 2600));
+    }
     show(msg, sub, col = '#ffffff', hold = 1800) {
       this.tweens.killTweensOf([this.banner, this.bannerSub]);
       this.banner.setText(msg).setColor(col).setAlpha(0).setScale(0.6); this.bannerSub.setText(sub || '').setAlpha(0);
@@ -604,12 +609,12 @@
         case 'waveclear': if (e.surv) { if (e.rush) this.show('BOSS ' + e.rush + '/' + e.of + ' DOWN', 'Refill! Next boss incoming…', '#8ee35a', 1400); else this.show('LEVEL ' + e.wave + ' CLEAR', '+' + (300 * e.wave).toLocaleString() + ' pts · heal ' + (e.wave % 10 === 0 ? '50%' : '15%') + ' · item dropped', '#8ee35a', 1200); } break;
         case 'survwin': this.show('BOSS RUSH CLEARED!', 'All 100 levels. The office is finally closed.', '#ffd34d', 3000); break;
         case 'lock': this.goOn = false; if (e.label) this.floorLabel = base + ' · ' + e.label; break;
-        case 'go': this.goOn = true; this.floorLabel = base; this.goSub.setText(e.label ? 'to the ' + e.label : ''); break;
-        case 'bossintro': { const SY = CO.story(CO.curChars), rp = sim.boss && sim.mode !== 'survival' && SY.boss[sim.boss.type]; this.floorLabel = base + ' · BOSS'; this.show('BOSS', e.text + (rp ? '\n' + CO.CHARACTERS[CO.storyLead(CO.curChars)].name + ': "' + rp + '"' : ''), '#ff9a2e', rp ? 2800 : 2000); window.__bossReply = rp || null; this.bossName.setText(e.name).setVisible(true); break; }
+        case 'go': this.goOn = true; this.floorLabel = base; this.goSub.setText(e.label ? 'to the ' + ((S.num === 7 && CO.story(CO.curChars).exit7) || e.label) : ''); break;
+        case 'bossintro': { const SY = CO.story(CO.curChars), rp = sim.boss && sim.mode !== 'survival' && SY.boss[sim.boss.type]; this.floorLabel = base + ' · BOSS'; this.show('BOSS', e.text + (rp ? '\n' + CO.CHARACTERS[CO.storyLead(CO.curChars)].name + ': "' + rp + '"' : ''), '#ff9a2e', rp ? 2800 : 2000); this.bossExtra(sim); window.__bossReply = rp || null; this.bossName.setText(e.name).setVisible(true); break; }
         case 'banner': this.show(e.msg, e.sub, '#ff9a2e', 1600); break;
         case 'overtime': { const q = sim.players.find(o => o.id === e.p); this.show((q && q.char.otName === 'ULT' ? 'NITRO' : 'OVERTIME') + '!', '50+ hits — damage up, meter fills faster!', '#ffc83d', 1000); this.tweens.add({ targets: this.otBadge, scale: { from: 1.6, to: 1 }, duration: 300 }); break; }
         case 'bossdown': this.show('BOSS DEFEATED', '"' + sim.boss.def.defeat[0] + '"', '#ffd34d', 2200); break;
-        case 'clear': this.goOn = false; this.show(e.result.scene === 'lobby' ? 'THE EXIT IS BLOCKED!' : S.num === 7 ? CO.story(CO.curChars).goal + '!' : 'STAGE CLEAR!', (CO.story(CO.curChars).stages[S.id] || {}).clear || S.clear, e.result.scene === 'lobby' ? '#ff9a2e' : '#8ee35a', 2400);
+        case 'clear': this.goOn = false; this.show(e.result.scene === 'lobby' ? 'THE EXIT IS BLOCKED!' : S.num === 7 ? CO.story(CO.curChars).goal + '!' : 'STAGE CLEAR!', [(CO.story(CO.curChars).stages[S.id] || {}).clear || S.clear].concat(CO.storyExtras(CO.curChars).slice(0, 2).map(c => (CO.STORIES[c].stages[S.id] || {}).clear ? CO.CHARACTERS[c].name + ': ' + CO.STORIES[c].stages[S.id].clear : '').filter(Boolean)).join('\n'), e.result.scene === 'lobby' ? '#ff9a2e' : '#8ee35a', 2400);
           { const SY = CO.story(CO.curChars); if (SY.clearFlash) { const ft = this.add.text(640, 600, SY.clearFlash, CO.style(30, '#ffd678')).setOrigin(0.5).setDepth(60).setAlpha(0); window.__flash = SY.clearFlash;
             this.tweens.add({ targets: ft, alpha: 1, duration: 160, yoyo: true, repeat: 4, hold: 140, onComplete: () => ft.destroy() }); } }
           break;

@@ -162,7 +162,7 @@
     pairs() {
       const k = Math.min(this.picks.length, this.n - 1), col = '#' + (CO.PLAYER_COLORS[k] || 0xffffff).toString(16).padStart(6, '0');
       this.head.setText(this.n > 1 ? 'CO-OP · PLAYER ' + (k + 1) + ' OF ' + this.n : 'CHOOSE YOUR FIGHTER').setColor(this.n > 1 ? col : '#ffd34d');
-      this.sub.setText(this.n > 1 ? 'Pick with any keyboard / pad — each fighter can be taken once' + (this.n > this.ids.length ? ' (then doubles allowed)' : '') : 'Left / Right to choose · Enter or tap to confirm · Esc: back');
+      this.sub.setText(this.n > 1 ? 'Pick with any keyboard / pad — each fighter can be taken once' : 'Left / Right to choose · Enter or tap to confirm · Esc: back');
       this.foot.setText(this.picks.length ? 'Picked: ' + this.picks.map((c, i) => 'P' + (i + 1) + ' ' + CO.CHARACTERS[c].name).join('  ·  ') : (CO.touchOn() ? 'Tap a fighter' : ''));
       this.cards.forEach(o => { const idx = this.picks.reduce((a, c, i) => c === o.id ? a.concat(i) : a, []); o.badge.setText(idx.map(i => 'P' + (i + 1)).join(' ')); o.spr.setAlpha(this.taken(o.id) ? 0.4 : 1); });
       window.__charSelect = { n: this.n, picks: this.picks.slice() };

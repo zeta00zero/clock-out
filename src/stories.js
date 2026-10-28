@@ -15,6 +15,9 @@
       coopEnd: '',
     },
     weisheng: {
+      exit7: 'HOME', scenes: {
+        lobby: { img: 'bg_s3', panels: [{ t: 'The CEO seals the front doors.', s: '"Exit sealed. …Roof, then. Detour noted."' }, { t: 'Plan B: the lift. Up to the roof.', s: '"Lift\'s the fastest thing in this building. Including me."' }] },
+        roof: { img: 'bg_s5', panels: [{ t: 'Take-off!', s: '"Shortest distance between two points: a straight line. Down."' }, { t: 'CRASH.', s: '"It\'s going down. Not the way I planned."' }, { t: 'A quiet apartment block.', s: '"Sorry about the wall. I\'ll send a cheque."', img: 'bg_s6' }] } },
       title: 'HOME BY 7:30', goal: 'DINNER', deadline: 19 * 60 + 30, clockOff: -30, pron: 'HE',
       intro: [
         { t: '5:58 PM. Friday.', s: 'Daughter: "Papa, dinner at 7:30! Mama made curry. You promised!!"  —  "Promised. Leaving at six. Not a minute later."', img: st('ws_i1') },
@@ -24,8 +27,8 @@
       ],
       stages: {
         s1: { sub: 'OPEN-PLAN TRAFFIC JAM', start: '"Stairwell\'s on the far side. Efficient route: through them."', clear: '"One floor. Eighty-one minutes."', text: 'Papa where r u' },
-        s2: { sub: 'THE MEETING THAT COULD\'VE BEEN AN EMAIL', start: '"I don\'t do quick syncs."', clear: '"Lobby next. Then the car."', text: 'Mama says dont run in the suit' },
-        s3: { sub: 'THE LOBBY', start: '"Front door. Garage after that."', clear: '"Exit sealed. ...Roof, then. Detour noted."' },
+        s2: { sub: 'THE MEETING THAT COULD\'VE BEEN AN EMAIL', start: '"I don\'t do \'quick syncs\'."', clear: '"Lobby next. Then the car."', text: 'Mama says dont run in the suit' },
+        s3: { sub: 'THE LOBBY', start: '"Front door. Garage after that."', clear: '"Exit sealed. …Roof, then. Detour noted."' },
         s4: { sub: 'EXPRESS TO THE ROOF', start: '"Lift\'s the fastest thing in this building. Including me."', clear: '"Roof. There\'s a helicopter. Of course there is."', text: 'Is that you on the news??' },
         s5: { sub: 'HELIPAD', start: '"Shortest distance between two points: a straight line. Down."', clear: '"It\'s going down. Not the way I planned."' },
         s6: { sub: 'WRONG FLAT', start: '"Sorry about the wall. I\'ll send a cheque."', clear: '"Street level. Twelve minutes left."', text: 'We saved u the big plate' },
@@ -38,21 +41,24 @@
       ],
       endHead: ['HE MADE IT... DINNER\'S A BIT COLD.', 'CLOCKED OUT. HOME FOR DINNER.'],
       endSub: (hm, late, spare) => 'Home at ' + hm + ' — ' + (late ? 'dinner\'s cold, but the hug is warm.' : spare + ' to spare. Curry, rice, family.'),
-      until: 'until dinner.', lateMsg: 'Dinner has started. MOVE.', overLine: 'Dinner is at 7:30. The curry does not wait.',
+      until: 'until dinner.', lateMsg: 'Dinner\'s cold.', overLine: 'Dinner is at 7:30. The curry does not wait.',
       coopEnd: 'Weisheng made dinner. 7:30 sharp.',
     },
     keith: {
+      exit7: 'GAME NIGHT', scenes: {
+        lobby: { img: 'bg_s3', panels: [{ t: 'The CEO seals the front doors.', s: '"Door\'s locked. Guess we take the long route, like a side quest."' }, { t: 'Plan B: the lift. Up to the roof.', s: '"Elevator = loading screen. Fight during the loading screen."' }] },
+        roof: { img: 'bg_s5', panels: [{ t: 'Take-off!', s: '"A helicopter?? Bro, this is a cutscene."' }, { t: 'CRASH.', s: '"Okay that crash was NOT in the trailer."' }, { t: 'A quiet apartment block.', s: '"Sorry auntie! Wrong game night!"', img: 'bg_s6' }] } },
       title: 'GAME NIGHT, BRO', goal: 'GAME NIGHT', deadline: 20 * 60, clockOff: 0, pron: 'HE',
       intro: [
-        { t: '5:58 PM. The AV booth.', s: 'Group chat BROS: "8PM game night!!"  "new banner drops tonight"  "KEITH U BRINGING THE SNACKS"', img: st('kt_i1') },
+        { t: '5:58 PM. The AV booth.', s: 'Group chat BROS: "8PM game night!!"  "new banner drops tonight"  "KEITH U BRINGING THE SNACKS"  "limited event bro dont be late"', img: st('kt_i1') },
         { t: 'Lights out. Something shambles on the projector.', s: '"Bro. Not tonight."', img: st('kt_i2') },
         { t: 'Snacks: secured. Laser pointer: ready.', s: '"Relax, bro. Two hours. Easy."', img: st('kt_i3') },
-        { t: 'CLOCK OUT!  —  GAME NIGHT, BRO', s: 'Keith. After-hours AV tech. The kitties have his back.', img: st('kt_i3') },
+        { t: 'CLOCK OUT!  —  GAME NIGHT, BRO', s: 'Keith. After-hours AV tech. The kitties have his back.', img: st('kt_i2') },
       ],
       stages: {
         s1: { sub: 'LAG SPIKE', start: '"Relax, bro. It\'s just the tutorial level."', clear: '"Floor cleared. Achievement unlocked."', text: 'keith eta??' },
         s2: { sub: 'SERVER FARM', start: '"Server room? Bro, I could get such good ping here."', clear: '"Lobby time. Snacks still intact."', text: 'we pulled 0 SSRs waiting for u' },
-        s3: { sub: 'THE LOBBY', start: '"Boss at the door? That\'s a raid boss, bro."', clear: '"Door\'s locked. Long route — like a side quest."' },
+        s3: { sub: 'THE LOBBY', start: '"Boss at the door? That\'s a raid boss, bro."', clear: '"Door\'s locked. Guess we take the long route, like a side quest."' },
         s4: { sub: 'LOADING SCREEN', start: '"Elevator = loading screen. Fight during the loading screen."', clear: '"Roof unlocked. New area discovered!"', text: 'bro is that u on the rooftop cam lol' },
         s5: { sub: 'HELIPAD', start: '"A helicopter?? Bro, this is a cutscene."', clear: '"Okay that crash was NOT in the trailer."' },
         s6: { sub: 'WRONG HOUSE', start: '"Sorry auntie! Wrong game night!"', clear: '"Street level. Bros say the banner\'s live."', text: 'SNACKS. KEITH. SNACKS.' },
@@ -66,10 +72,13 @@
       ],
       endHead: ['HE MADE IT... BANNER\'S HALF OVER.', 'CLOCKED OUT. GAME NIGHT, BRO.'],
       endSub: (hm, late, spare) => 'Logged in at ' + hm + ' — ' + (late ? 'the bros pulled without him. Still SSR vibes.' : spare + ' to spare. Snacks delivered.'),
-      until: 'until game night.', lateMsg: 'The bros started without you. RUN.', overLine: 'Game night is at 8. The banner does not wait.',
+      until: 'until game night.', lateMsg: 'Bros started the gacha without you.', overLine: 'Game night is at 8. The banner does not wait.',
       coopEnd: 'Keith made game night. SSR pulled.',
     },
     weiyao: {
+      exit7: 'HIGHBALL HIDEOUT', scenes: {
+        lobby: { img: 'bg_s3', panels: [{ t: 'The CEO seals the front doors.', s: '"Doors sealed? Then we take the stage door — the roof."' }, { t: 'Plan B: the lift. Up to the roof.', s: '"Elevator music. I could do a better cover."' }] },
+        roof: { img: 'bg_s5', panels: [{ t: 'Take-off!', s: '"High ground. My best angle."' }, { t: 'CRASH.', s: '"...That landing was NOT choreographed."' }, { t: 'A quiet apartment block.', s: '"Pardon the intrusion — autographs later!"', img: 'bg_s6' }] } },
       title: 'HAPPY HOUR ENCORE', goal: 'HAPPY HOUR', deadline: 20 * 60, clockOff: 0, pron: 'HE', clearFlash: 'GRAND DERBY 8:00 PM', hudGoal: 'HAPPY HOUR ends 8:00 · ',
       intro: [
         { t: '5:58 PM. The event-hall desk.', s: 'STARLIGHT GALLOP!: "GRAND DERBY tonight 8PM! Your ace Crimson Encore is entered!"   Highball Hideout: "Highball happy hour, 2-for-1 til 8:00"   —  "Rehearsal\'s over. Showtime ends at six."', img: st('wy_i1') },

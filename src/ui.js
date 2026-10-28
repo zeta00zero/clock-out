@@ -40,7 +40,7 @@
     survReach(L, won) { const B = this.survLevel(); let nw = false; if (L > B.max) { B.max = Math.min(100, L); nw = true; } if (won) B.won = true; store('clockout.survlv', B); B.isNew = nw; return B; },
     survivalBest(r) { const B = this.best(); if (r.score > B.score) { B.score = r.score; B.wave = r.wave; B.sec = r.sec; store('clockout.best', B); B.isNew = true; } return B; },
   };
-  // v4: fighter selection (1-5 players). Order: ?chars= / ?char= params > last choice saved in this browser > Lemon.
+  // v4: fighter selection (1-4 players). Order: ?chars= / ?char= params > last choice saved in this browser > Lemon.
   const ARN = CO.SURV_ARENAS || ['survival'];
   CO.sel = Object.assign({ chars: ['lemon'], arena: 'survival' }, load('clockout.sel', {}));
   if (CO.params.chars) CO.sel.chars = CO.params.chars.slice(); else if (CO.params.char) CO.sel.chars = [CO.params.char];
@@ -209,8 +209,9 @@
       const S = CO.STAGES[id], locked = i >= this.P.unlocked;
       this.prev.setTexture(S.bg).setDisplaySize(720, 405).setTint(locked ? 0x333344 : 0xffffff);
       this.lock.setVisible(locked);
-      this.title.setText('STAGE ' + S.num + ': ' + S.name + ' — ' + S.sub);
-      this.cap.setText(locked ? 'Clear the previous stage to unlock.' : S.caption.join('\n') + (this.P.grades[id] ? '\nBest review: ' + this.P.grades[id] : ''));
+      const SYs = CO.story(CO.sel.chars), sds = SYs.stages[id] || {};   // v5.1: per-story card subtitle + lines (was always Lemon's)
+      this.title.setText('STAGE ' + S.num + ': ' + S.name + ' — ' + (sds.sub || S.sub));
+      this.cap.setText(locked ? 'Clear the previous stage to unlock.' : (sds.start ? [S.caption[0].replace(/Lemon's desk, /, ''), CO.CHARACTERS[CO.storyLead(CO.sel.chars)].name + ': ' + sds.start] : S.caption).join('\n') + (this.P.grades[id] ? '\nBest review: ' + this.P.grades[id] : ''));
     }
   }
 
@@ -246,9 +247,10 @@
       // v5: per-character story — the intro / ending panels come from CO.STORIES[lead]; shared cutscenes swap the hero's name
       const lead = CO.storyLead(data.chars || CO.curChars || CO.sel.chars), nm = (CO.CHARACTERS[lead] || {}).name || 'Lemon', cap = nm.charAt(0) + nm.slice(1).toLowerCase();
       const swap = p => lead === 'lemon' ? p : p.map(q => Object.assign({}, q, { t: q.t.replace(/Lemon/g, cap).replace(/LEMON/g, nm), s: q.s.replace(/Lemon/g, cap).replace(/LEMON/g, nm).replace(/STARSHIFT/g, CO.STORIES[lead].goal) }));
-      this.panels = data.panels || (data.scene ? swap(CO.STORY.scenes[data.scene].panels) : CO.storyIntro(data.chars || CO.sel.chars));
+      const OS = data.scene && CO.STORIES[lead] && CO.STORIES[lead].scenes && CO.STORIES[lead].scenes[data.scene];   // v5.1: own cutscene (no Lemon art) for non-Lemon leads
+      this.panels = data.panels || (OS ? OS.panels : data.scene ? swap(CO.STORY.scenes[data.scene].panels) : CO.storyIntro(data.chars || CO.sel.chars));
       window.__story = { lead, scene: data.story || data.scene || 'intro', n: this.panels.length };
-      this.bg = this.add.image(640, 360, data.scene ? CO.STORY.scenes[data.scene].img : (this.panels[0] && this.panels[0].img) || 'bg_intro').setDisplaySize(1280, 720);
+      this.bg = this.add.image(640, 360, OS ? OS.img : data.scene ? CO.STORY.scenes[data.scene].img : (this.panels[0] && this.panels[0].img) || 'bg_intro').setDisplaySize(1280, 720);
       this.tweens.add({ targets: this.bg, scale: this.bg.scale * 1.06, duration: 16000 });
       const g = this.add.graphics(); g.fillStyle(0x000000, 0.72); g.fillRect(0, 520, 1280, 200);
       this.title = this.add.text(640, 575, '', CO.style(42, '#ffd34d')).setOrigin(0.5);

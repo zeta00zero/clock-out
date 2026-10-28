@@ -6,7 +6,7 @@
 
   // ---------------------------------------------------------------------------------------------
   // v3: rebindable controls. CO.binds holds per-player keyboard maps (P1 + P2 share one keyboard,
-  // each action has up to 2 keys) and one gamepad map shared by pads 1-5. Saved in localStorage
+  // each action has up to 2 keys) and one gamepad map shared by pads 1-4. Saved in localStorage
   // ('clockout.binds') and read live by the input sources below, so a rebind applies immediately.
   // ---------------------------------------------------------------------------------------------
   const KB_ACTIONS = [   // [id, label]  (order = Controls screen order)
@@ -194,8 +194,8 @@
     }
   }
 
-  // Per-player device assignment (co-op ready, up to CO.MAX_PLAYERS = 5):
-  //   P1 = keyboard + gamepad 0 + touch,  P2..P5 = gamepads 1..4,  bots for tests / CPU partners.
+  // Per-player device assignment (co-op ready, up to CO.MAX_PLAYERS = 4):
+  //   P1 = keyboard + gamepad 0 + touch,  P2..P4 = gamepads 1..3,  bots for tests / CPU partners.
   function forSlot(slot, opts = {}) {
     if (opts.bot) return new PlayerInput([new BotSource(opts.getSim, slot)]);
     if (slot === 0) return new PlayerInput([new KeyboardSource(0), new GamepadSource(0), CO.touch]);

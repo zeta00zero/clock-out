@@ -6,7 +6,7 @@
 //  Classic script (no modules) so file:// keeps working; online simply reports "unavailable" without PeerJS / network.
 (function (CO) {
   const Q = (() => { try { return new URLSearchParams(location.search); } catch (e) { return new URLSearchParams(''); } })();
-  const CFG = { prefix: 'clockout-v5-', alpha: 'ABCDEFGHJKMNPQRSTUVWXYZ23456789', ver: 'clockout-v5.0', snapEvery: 3, keyEvery: 40, pingMs: 2000, lostMs: 12000, joinMs: 15000, max: 5 };
+  const CFG = { prefix: 'clockout-v5-', alpha: 'ABCDEFGHJKMNPQRSTUVWXYZ23456789', ver: 'clockout-v5.1', snapEvery: 3, keyEvery: 40, pingMs: 2000, lostMs: 12000, joinMs: 15000, max: 4 };
   const FLOW = new Set(['clear', 'failed', 'survArena', 'survwin']);           // never replayed on clients (the host drives scene changes)
   const SYNC = new Set(['Game', 'Cutscene', 'Intro', 'Result', 'GameOver']);    // host scene changes mirrored on every client
   const OUT = new Set(['Title', 'StageSelect', 'SurvSelect', 'CharSelect', 'HowTo']);   // host leaving play -> everyone back to the lobby
@@ -75,7 +75,7 @@
       if (md.v !== CFG.ver) return rej('Version mismatch — reload the latest game page.');
       if (N.inPlay) return rej('A game is already running in this room.');
       const used = new Set(N.lobby.players.map(p => p.slot)); let slot = -1; for (let k = 1; k < CFG.max; k++) if (!used.has(k)) { slot = k; break; }
-      if (slot < 0) return rej('This room is full (5 players).');
+      if (slot < 0) return rej('Sorry, this room is full: 4 players max. Ask the host for a new room.');
       const want = N.charFree(md.char, null) ? md.char : N.cycleChar(md.char || 'lemon', 1, null);
       const R = { c, slot, id: c.peer, ok: true, last: now(), rtt: 0, inp: { mx: 0, my: 0, h: {}, p: {} } };
       N.conns.push(R); N.lobby.players.push({ slot, id: c.peer, name: String(md.name || 'Player').slice(0, 12), char: want, ready: false, phone: !!md.phone });
@@ -107,7 +107,7 @@
   N.lobbyMe = () => N.lobby.players.find(p => p.slot === N.me.slot) || {};
   N.pushLobby = () => { if (N.mode !== 'host') return; const L = N.lobby; N.bcast({ t: 'lobby', players: L.players, mode: L.mode, stage: L.stage, level: L.level, code: N.code }); N.lobbyRev = (N.lobbyRev || 0) + 1; };
   N.chars = () => Object.keys(CO.CHARACTERS);
-  // each player on a different fighter while one is free (4 fighters, 5 seats: the 5th may double up)
+  // each player on a different fighter (4 fighters, 4 seats max)
   N.charFree = (ch, L) => { if (!CO.CHARACTERS[ch]) return false; const others = N.lobby.players.filter(p => p !== L).map(p => p.char); return !others.includes(ch) || N.chars().every(c => others.includes(c)); };
   N.cycleChar = (cur, d, L) => { const C = N.chars(); let i = C.indexOf(cur); for (let n = 0; n < C.length; n++) { i = (i + d + C.length) % C.length; if (N.charFree(C[i], L)) return C[i]; } return cur; };
   N.hostPick = ch => { const L = N.lobbyMe(); if (N.charFree(ch, L)) { L.char = ch; N.me.char = ch; } N.pushLobby(); };

@@ -749,7 +749,7 @@
     // ---------- boss ----------
     spawnBoss(id, from, lines) {
       const d = CO.BOSSES[id], A = this.A, n = Math.max(1, this.players.length);
-      const hp = d.hp * (1 + 0.6 * (n - 1)) * this.hpMul, L = from === 'l';
+      const hp = d.hp * (1 + 0.85 * (n - 1)) * this.hpMul, L = from === 'l';   // v5.1: +25% more per extra player
       this.boss = { id: this.nextId++, kind: 'boss', type: id, def: d, x: L ? A.x0 - 200 : A.x1 + 200, y: (A.y0 + A.y1) / 2 - 20, z: 0, vx: 0, vy: 0, vz: 0, face: L ? 1 : -1,
         hp, maxhp: hp, poise: d.poise, state: 'intro', st: 0, cd: 60, w: d.w, flash: 0, phase: 1, pose: d.frames.idle, rot: 0, summonCd: 400, last: '',
         from: L ? 'l' : 'r', intro: lines || d.intro, fightT: 0 };
@@ -1064,8 +1064,13 @@
         if (this.enemies.length < max) { this.spawnEnemy(this.queue.shift()); this.spawnT = 28; }
       }
     }
+    // v5.1 co-op scaling (solo = 1): before v5.1 each extra player added +40% enemies; v5.1 adds another +30% each
+    // (2P x1.7, 3P x2.4, 4P x3.1 vs solo), bosses +85% HP each (was +60%), and higher on-screen caps. Online players count the same as local ones.
+    coopN() { return Math.max(1, Math.min(CO.MAX_PLAYERS || 4, this.players.length)); }
+    coopCount() { return 1 + 0.7 * (this.coopN() - 1); }
+    coopCap(base) { const n = this.coopN(); return Math.min(Math.round(12 + (n - 1) * 8 / 3), Math.round(base * (1 + 0.3 * (n - 1)))); }
     buildQueue(spawns) {
-      const q = [], lists = spawns.map(([t, n]) => Array(Math.round(n * (1 + 0.4 * (this.players.length - 1)))).fill(t));
+      const q = [], lists = spawns.map(([t, n]) => Array(Math.round(n * this.coopCount())).fill(t));
       while (lists.some(l => l.length)) for (const l of lists) if (l.length) q.push(l.pop());
       return q;
     }
@@ -1088,7 +1093,7 @@
         const en0 = E[this.enc];
         if (this.cd > 0) this.cd--;
         if (en0 && en0.countdown && this.cd === 0 && !this.dinged) { this.dinged = true; this.ev({ t: 'lift_ding' }); }
-        this.spawnTick(this.curWaves[this.wave].max + 2 * (this.players.length - 1));
+        this.spawnTick(Math.max(this.curWaves[this.wave].max, Math.min(20, Math.round(this.curWaves[this.wave].max * (1 + 0.3 * (this.coopN() - 1))) + 2 * (this.coopN() - 1))));
         if (!this.queue.length && this.enemies.length === 0) { this.state = 'between'; this.st = 0; this.ev({ t: 'waveclear', wave: this.wave, quiet: !!(en0 && en0.countdown) }); }
       } else if (this.state === 'between') {
         const en = E[this.enc];
@@ -1239,7 +1244,7 @@
       const counts = {};
       for (let k = 0; k < P.total; k++) { const t = k < 2 ? P.types[P.types.length - 1] : P.types[Math.floor(this.rng() * P.types.length)]; counts[t] = (counts[t] || 0) + 1; }
       if (P.speakers) counts.speaker = P.speakers;
-      V.max = P.max;
+      V.max = this.coopN() > 1 ? Math.max(P.max, this.coopCap(P.max) + (this.coopN() - 1)) : P.max;   // v5.1: cap 12 solo -> ~20 at 4P
       if (S.liftArena) this.ev({ t: 'doors', open: true });
       this.queue = this.buildQueue(Object.entries(counts)); this.spawnT = 10; this.state = 'wave'; this.st = 0;
       this.ev({ t: 'wave', n: L, of: 0, text: SURV_LINES[(L - 1) % SURV_LINES.length], surv: true, level: L });

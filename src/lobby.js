@@ -10,7 +10,7 @@
       this.head = this.add.text(50, 30, '', CO.style(40, '#ffd34d'));
       this.stat = this.add.text(50, 82, '', CO.style(18, '#cfe8ff')).setWordWrapWidth(1180);
       this.codeT = this.add.text(50, 128, '', CO.style(56, '#ffffff'));
-      this.rows = []; for (let k = 0; k < 5; k++) { const y = 230 + k * 66, g = this.add.graphics(), t = this.add.text(92, y, '', CO.style(22, '#ffffff')).setOrigin(0, 0.5), r = this.add.text(560, y, '', CO.style(20, '#7dff8a')).setOrigin(1, 0.5); this.rows.push({ y, g, t, r }); }
+      this.rows = []; for (let k = 0; k < 4; k++) { const y = 230 + k * 66, g = this.add.graphics(), t = this.add.text(92, y, '', CO.style(22, '#ffffff')).setOrigin(0, 0.5), r = this.add.text(560, y, '', CO.style(20, '#7dff8a')).setOrigin(1, 0.5); this.rows.push({ y, g, t, r }); }
       this.g = this.add.graphics(); this.fresh = new CO.Fresh(this, 250); this.cameras.main.fadeIn(250);
       this.rev = -1; this.build(N.session ? 'room' : 'home'); window.__lobby = this;
       if (d.auto && !N.session) { const m = Q.get('net'); if (m === 'host') this.doHost(); else if (m === 'join') this.doJoin(Q.get('room')); }
@@ -70,7 +70,7 @@
       const L = N.lobby, host = N.mode === 'host', room = this.page === 'room';
       this.head.setText('ONLINE CO-OP — ' + (L.mode === 'survival' ? 'SURVIVAL' : 'STORY') + (room ? (host ? '  ·  YOU ARE THE HOST' : '  ·  P' + (N.me.slot + 1)) : ''));
       this.codeT.setText(room && N.code ? 'ROOM  ' + N.code : '');
-      if (room) this.stat.setText(host ? (L.players.length < 2 ? 'Share the code. Up to 5 players, each on a different fighter. ' : '') + (N.allReady() ? 'Everyone is ready — press START.' : 'Waiting for everyone to be READY…') + '   ' + (L.mode === 'survival' ? 'Survival from level ' + L.level : 'Story: ' + CO.STAGES[L.stage].name)
+      if (room) this.stat.setText(host ? (L.players.length < 2 ? 'Share the code. Up to 4 players, each on a different fighter. ' : '') + (N.allReady() ? 'Everyone is ready — press START.' : 'Waiting for everyone to be READY…') + '   ' + (L.mode === 'survival' ? 'Survival from level ' + L.level : 'Story: ' + CO.STAGES[L.stage].name)
         : 'Host picks ' + (L.mode === 'survival' ? 'Survival · level ' + L.level : 'Story · ' + CO.STAGES[L.stage].name) + '.  ' + (N.me.ready ? 'You are READY — waiting for the host to start.' : 'Pick a fighter, then READY.'));
       this.g.clear();
       this.rows.forEach((R, k) => {
