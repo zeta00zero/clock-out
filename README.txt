@@ -4,26 +4,26 @@ WHAT'S NEW IN v5
   MENU      STORY MODE (Start/Continue with character select, Stage Select, Co-op LOCAL or ONLINE) · SURVIVAL MODE (Single with level select,
             Co-op ONLINE or LOCAL) · SETTINGS (How to Play, Key Binding, Audio/Touch/Effects). Esc / Back works on every page.
   ONLINE    STORY or SURVIVAL -> CO-OP -> ONLINE. HOST A ROOM gives a 6-character code (COPY / SHARE CODE); friends pick JOIN WITH CODE.
-            Up to 5 players, each on a different fighter while one is free. Everyone presses READY, the host picks the mode and stage/level and presses START.
+            Up to 4 players, each on a different fighter (a 5th player trying to join gets a friendly 'room is full' message). Everyone presses READY, the host picks the mode and stage/level and presses START.
             The host runs the game; others see it live (works on phones). If a player drops, a CPU takes over their fighter; if the host
             leaves, everyone returns to the menu. Online needs internet (PeerJS cloud server). Some strict NAT / office firewalls can block it -
             try another network or add ?relay=1 to the address. Offline / file:// play is unaffected.
   SURVIVAL  100 levels, a boss every 10, Level 100 = BOSS RUSH (all bosses back to back, refills between). Breaks heal and drop an item.
             Your best level is saved; start from any level you've reached. Scales with co-op players.
-  WEI YAO   Player 4 fighter with her own story; Weisheng ("Home by 7:30") and Keith ("Game Night, Bro") stories too. In co-op, Lemon's story leads.
+  WEI YAO   Player 4 fighter with his own story; Weisheng ("Home by 7:30") and Keith ("Game Night, Bro") stories too. In co-op, Lemon's story leads.
 
 HOW TO PLAY
   Unzip, then double-click index.html (Chrome, Edge, Firefox or Safari). No server or internet needed.
   On a phone, put the folder on any static host (for example GitHub Pages) and play in landscape.
 
 START   A 5.6 s phone-smash intro plays before the title (desk -> throw -> cracked screen -> ~90 glass shards fall away onto the live menu; ~40 on phones). Any key, tap or pad button skips it; the skip press never reaches the menu.
-        STORY, SURVIVAL and CO-OP open a CHARACTER SELECT: LEMON, WEISHENG or KEITH (co-op: each player picks, no duplicates while a fresh fighter is free).
+        STORY, SURVIVAL and CO-OP open a CHARACTER SELECT: LEMON, WEISHENG, KEITH or WEI YAO (co-op: 2-4 players, each picks a different fighter).
 
 KEYBOARD (defaults - every key can be changed: TITLE -> CONTROLS, or CONTROLS / KEY BINDING on the How to Play screen)
   P1: Move WASD   Light J / Z   Heavy K / X (hold to charge)   Jump Space / C   Dash L / Shift
       Skill 1/2/3  U I O  (or 1 2 3)   Ultimate ; / 4   Pause Esc / P.   With one player the arrow keys also move.
   P2: Move arrows   Light ,   Heavy .   Jump /   Dash Right-Shift   Skills 7 8 9   Ultimate 0
-  P3-P5: gamepads 3-5.   GAMEPAD  X light, Y heavy, A jump, B/RT dash, LB/RB/LT skills, R3 ultimate, Start pause (pads 1-5)
+  P3-P4: gamepads 3-4.   GAMEPAD  X light, Y heavy, A jump, B/RT dash, LB/RB/LT skills, R3 ultimate, Start pause (pads 1-4)
   TOUCH   Left thumb = floating stick; right side: ATK / HVY / JUMP / DASH, three skill icons and the ultimate. II pauses.
   DOUBLE JUMP  press Jump again while airborne (once per jump, slightly lower, with a flip). Works on keyboard, gamepad and the touch JUMP button; air attacks still work after it.
 
