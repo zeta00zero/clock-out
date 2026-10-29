@@ -9,23 +9,46 @@
     // v3: story maps are WebP chunks in maps/maps_<id>.js, loaded per stage (script tag => works from file://)
     create(data) {
       data = data || {}; const id = data.stage || 'survival';
-      this.sim = null;
+      this.sim = null; const tok = this.loadTok = (this.loadTok || 0) + 1, live = () => this.loadTok === tok && this.sys.settings.status < Phaser.Scenes.SHUTDOWN; this.buildOk = false;   // v5.3: status is CREATING inside create(), so isActive() would drop cached-map revisits
       for (const k of Object.keys(this.textures.list)) if (k.indexOf('map_') === 0 && k.indexOf('map_' + id + '_') !== 0) this.textures.remove(k);   // drop the previous stage's chunks
-      if (!CO.STAGES[id].len || this.textures.exists('map_' + id + '_n0')) return this.build(data);
+      // v5.3 blank-screen fix: every path ends in exactly one build() for THIS create (stale loader callbacks from a restarted scene are ignored),
+      // missing chunks are re-requested, a stalled load times out and retries once, and build errors fall back instead of leaving a black canvas
+      const ready = () => { const D = window.MAPDATA && window.MAPDATA[id]; return !CO.STAGES[id].len || (D ? Object.keys(D.img).every(k => this.textures.exists(k)) : this.textures.exists('map_' + id + '_n0')); };
+      if (ready()) return this.safeBuild(data);
       const t = this.add.text(640, 360, 'LOADING…', CO.style(30, '#ffffff')).setOrigin(0.5);
-      const done = () => { t.destroy(); this.build(data); };
+      let fin = false, tries = 0;
+      const done = () => { if (fin || !live()) return; fin = true; clearTimeout(this.loadTO); try { t.destroy(); } catch (e) {} this.safeBuild(data); };
       const addImgs = () => {
+        if (!live()) return;
         const D = window.MAPDATA && window.MAPDATA[id]; if (!D) { console.error('map data missing', id); return done(); }
-        for (const k in D.img) this.load.image(k, D.img[k]);
+        let n = 0; for (const k in D.img) if (!this.textures.exists(k)) { this.load.image(k, D.img[k]); n++; }
+        if (!n) return done();
         this.load.once('complete', done); this.load.start();
       };
-      if (window.MAPDATA && window.MAPDATA[id]) return addImgs();
-      const sc = document.createElement('script'); sc.src = 'maps/maps_' + id + '.js'; sc.onload = () => addImgs(); sc.onerror = () => { console.error('map script failed', id); done(); }; document.head.appendChild(sc);   // plain <script>: works on file:// (XHR does not)
+      const fetchScript = () => {
+        if (window.MAPDATA && window.MAPDATA[id]) return addImgs();
+        const sc = document.createElement('script'); sc.src = 'maps/maps_' + id + '.js' + (tries ? '?r=' + tries : ''); sc.onload = () => addImgs(); sc.onerror = () => { console.error('map script failed', id); if (tries < 1) { tries++; fetchScript(); } else done(); }; document.head.appendChild(sc);   // plain <script>: works on file:// (XHR does not)
+      };
+      const arm = () => { this.loadTO = setTimeout(() => { if (fin || !live()) return; console.warn('stage load stalled', id, 'try', tries); window.__loadRetry = (window.__loadRetry || 0) + 1;
+        if (tries < 1) { tries++; t.setText('LOADING… (retrying)'); try { this.load.off('complete', done); this.load.reset(); } catch (e) {} fetchScript(); this.load.once('complete', done); arm(); } else done(); }, 12000); };
+      arm(); fetchScript();
+    }
+    safeBuild(data) {
+      try { this.build(data); this.buildOk = true; window.__buildOk = (window.__buildOk || 0) + 1; }
+      catch (e) {
+        console.error('stage build failed', e); window.__buildFail = (window.__buildFail || 0) + 1;
+        const n = (data._retry | 0) + 1;
+        if (n <= 1) { this.time.delayedCall(50, () => this.scene.restart(Object.assign({}, data, { _retry: n }))); return; }
+        this.add.text(640, 360, 'Stage failed to load. Returning…', CO.style(28, '#ffffff')).setOrigin(0.5);
+        this.time.delayedCall(1200, () => { const on = CO.net && CO.net.session; this.scene.stop('HUD'); this.scene.start(on && CO.net.isHost() ? 'Lobby' : 'Title'); });
+      }
     }
     // v4.2: BACKGROUND -> WALL -> FLOOR -> actors -> FOREGROUND. v4.1: layered maps. BACKGROUND = one wide unique image (sky, skyline, single moon) at parallax F;
     // PLAYFIELD = alpha WebP chunks scrolling 1:1 (transparent windows/sky); FOREGROUND = thin rain on the street (High fx only)
     buildMap(id, W) {
-      const D = window.MAPDATA[id], M = D.meta;
+      const D = window.MAPDATA && window.MAPDATA[id];
+      if (!D) { console.warn('no map data for', id, '- using the stage backdrop'); const S = CO.STAGES[id]; if (S && S.bg && this.textures.exists(S.bg)) this.add.image(0, 0, S.bg).setOrigin(0).setDisplaySize(1280, 720).setScrollFactor(0).setDepth(-30); this.mapWall = []; this.mapFloor = []; this.fgRain = null; return; }   // v5.3: never a black screen
+      const M = D.meta;
       if (M.bg) this.add.image(0, 0, M.bg.k).setOrigin(0).setScrollFactor(M.bg.F, 0).setDepth(-30);
       if (M.sky) this.add.image(0, 0, M.sky.k).setOrigin(0).setScrollFactor(M.sky.F, 0).setDepth(-30);
       for (const c of (M.far || [])) this.add.image(c.x, M.farY || 0, c.k).setOrigin(0).setScrollFactor(M.F, 0).setDepth(-20);
@@ -55,7 +78,7 @@
       this.sim = new CO.Sim({ seed: CO.params.seed || ((Math.random() * 1e9) | 0), stage: stageId, mode: this.mode, checkpoint: cp, continues: data.continues || 0, stats: data.stats, god: CO.params.god, clock: Math.max(S.clock || 0, data.clock || 0), score: data.score, level: lv0 || 1 });
       // players: P1 = keyboard/pad/touch (or bot in tests); extra slots (debug ?players=N) = CPU bots
       const chars = data.chars || (CO.params.chars && CO.params.chars.length ? CO.params.chars : null) || [CO.params.char || 'lemon'];
-      const n = Phaser.Math.Clamp(Math.max(CO.params.players || 1, chars.length), 1, CO.MAX_PLAYERS); this.inputs = []; CO.activePlayers = n;
+      const n = Phaser.Math.Clamp(Math.max(CO.params.players || 1, chars.length), 1, CO.net && CO.net.session ? CO.MAX_PLAYERS : 2); this.inputs = [];   /* v5.3: local co-op is 2 players; online up to 4 */ CO.activePlayers = n;
       for (let k = 0; k < n; k++) {
         this.sim.addPlayer(chars[k] || ['lemon', 'weisheng', 'keith'][k % 3], k);
         this.inputs.push(CO.Input.forSlot(k, { bot: k === 0 ? CO.params.bot : !!(CO.params.bot || CO.params.cpu), getSim: () => this.sim }));
@@ -150,19 +173,27 @@
       if (!this.sim) return;
       if (this.game.loop.actualFps) this.fpsLog.push(this.game.loop.actualFps);
       if (this.netClient) { if (CO.net.isClient()) CO.net.clientUpdate(this, delta); return; }
+      if (this.hostHidden) { this.hostHidden = false; this.acc = 0; try { this.game.loop.resetDelta(); } catch (e) {} }   // v5.3: the hidden-tab timer was stepping the sim; resume cleanly
+      const online = CO.net && CO.net.isHost() && CO.net.inPlay;
       const intents = this.inputs.map(i => i.update());
-      if (intents.some(it => it.p.pause) && !this.ended) { this.scene.pause(); this.scene.pause('HUD'); this.scene.pause('Ambient'); this.scene.launch('Pause'); this.scene.bringToTop('Pause'); return; }
+      if (intents.some(it => it.p.pause) && !this.ended) {
+        // v5.3: online the host's pause menu is an overlay — pausing the host sim froze the game for every player
+        if (online) { if (!this.scene.isActive('Pause')) { this.scene.launch('Pause', { net: true }); this.scene.bringToTop('Pause'); } }
+        else { this.scene.pause(); this.scene.pause('HUD'); this.scene.pause('Ambient'); this.scene.launch('Pause'); this.scene.bringToTop('Pause'); return; }
+      }
+      if (online && this.scene.isActive('Pause')) intents[0] = { mx: 0, my: 0, h: {}, p: {} };   // host in the menu: its fighter idles, the room plays on
+      if (online && !CO.net.gateOpen(this)) { CO.net.hostTick(this); this.render(delta / 1000); return; }   // v5.3: READY / SET / GO — hold until every peer has loaded
       // collect presses so a frame with 0 sim steps doesn't lose them
       intents.forEach((it, k) => { for (const a in it.p) this.pend[k][a] = true; });
       let steps;
       if (CO.params.speed > 1) steps = CO.params.speed;
-      else { this.acc += Math.min(delta, 100); steps = Math.floor(this.acc / STEP); this.acc -= steps * STEP; }
+      else { const nw = performance.now(), wd = this._lt && nw - this._lt < 1000 ? nw - this._lt : delta; this._lt = nw; this.acc += Math.min(wd, 100); /* v5.3: wall-clock delta — Phaser's smoothed delta crawls for ~20 s after a tab returns */ steps = Math.floor(this.acc / STEP); this.acc -= steps * STEP; }
       if (window.__fs !== undefined) { steps = window.__fs > 0 ? 1 : 0; if (steps) window.__fs--; }   // test hook: frame-exact capture
       for (let s = 0; s < steps; s++) {
         if (this.sim.slowmo > 0 && (this.sim.frame + s) % 3 !== 0 && CO.params.speed === 1) { this.sim.slowmo--; continue; }
         const its = intents.map((it, k) => ({ mx: it.mx, my: it.my, h: it.h, p: this.pend[k] }));
         this.pend = intents.map(() => ({}));
-        this.sim.step(its);
+        this.sim.step(its); this.watchdog();
         const net = CO.net && CO.net.isHost();
         for (const e of this.sim.events) { if (net) CO.net.capture(e); this.onEvent(e); }
         if (this.ended) break;
@@ -174,6 +205,25 @@
       this.render(delta / 1000);
     }
 
+    // v5.3 stuck-player watchdog (host / solo authority): a fighter that sits in a non-free state for > 12 s is returned to idle
+    watchdog() {
+      if (this.sim.frame % 30) return;
+      for (const p of this.sim.players) { if (!p.alive || !p.char) continue;
+        if (['move', 'skill', 'hurt', 'down', 'dash', 'hold'].includes(p.state) && p.st > 720) { console.warn('[watchdog] unstick P' + (p.slot + 1), p.state, p.st); p.state = p.z > 0 ? 'air' : 'idle'; p.st = 0; p.move = null; p.mt = 0; p.rot = 0; p.flip = false; p.vx = p.vy = 0; window.__unstuck = (window.__unstuck || 0) + 1; }
+        if (p.state === 'air' && p.z <= 0 && p.st > 120) { p.state = 'idle'; p.st = 0; }
+        if (!isFinite(p.x) || !isFinite(p.y)) { const q = this.sim.players.find(o => o !== p && isFinite(o.x)) || { x: 300, y: 500 }; p.x = q.x; p.y = q.y; p.z = 0; p.vx = p.vy = p.vz = 0; }
+      }
+    }
+    // v5.3: host tab hidden -> Phaser's requestAnimationFrame loop stops; step the sim (no rendering) from the net timer
+    hiddenStep(dt) {
+      if (!this.sim || this.ended || this.netClient) return; this.hostHidden = true;
+      const intents = this.inputs.map(i => i.update()); intents[0] = { mx: 0, my: 0, h: {}, p: {} };
+      if (!CO.net.gateOpen(this)) return CO.net.hostTick(this);
+      this.acc += Math.min(dt, 1000); let n = 0;
+      while (this.acc >= STEP && n < 90 && !this.ended) { this.acc -= STEP; n++; this.sim.step(intents.map(it => ({ mx: it.mx, my: it.my, h: it.h, p: it.p }))); this.watchdog(); for (const e of this.sim.events) { CO.net.capture(e); if (e.t !== 'sfx') { try { this.onEvent(e); } catch (x) {} } } }
+      if (this.acc > STEP * 4) this.acc = 0;
+      CO.net.hostTick(this);
+    }
     // auto effects quality: if the frame rate stays low for ~3 s on 'auto', drop to Low (remembered for the session)
     perfWatch(delta) {
       if (!this.fxHigh || (CO.settings.fx || 'auto') !== 'auto' || CO.fxAutoLow) return;
@@ -203,7 +253,7 @@
       v.seen = this.frameNo; return v;
     }
     place(v, o, sc) {
-      const fr = F()[o.pose] || F().idle; v.spr.setTexture(F()[o.pose] ? o.pose : 'idle');
+      const fr = F()[o.pose] || F().idle || { ax: 0.5 }; v.spr.setTexture(F()[o.pose] && this.textures.exists(o.pose) ? o.pose : 'idle');   // v5.3: unknown pose (client mid-snapshot) no longer throws and freezes the view
       const flip = (o.face < 0) !== !!o.flip;
       sc *= this.charScale * (o.def && o.def.scale || 1);
       v.spr.setFlipX(flip).setOrigin(flip ? 1 - fr.ax : fr.ax, 1);
@@ -506,19 +556,31 @@
     constructor() { super('HUD'); }
     create() {
       this.game_ = this.scene.get('Game'); const sim0 = this.game_.sim, P = sim0.players, n = this.n = P.length, coop = this.coop = n > 1;
+      // v5.3 per-player HUD: online, each screen shows ITS OWN fighter as the full panel + own skills, team-mates as compact HP rows;
+      // local co-op (2P) = P1 panel top-left, P2 panel top-right, skills P1 left / P2 right
+      const online = this.online = !!(CO.net && CO.net.inPlay && (CO.net.isHost() || CO.net.isClient()));
+      const me = this.me = online ? Phaser.Math.Clamp((CO.net.isClient() ? this.game_.mySlot : 0) | 0, 0, n - 1) : 0;
+      const local2 = this.local2 = !online && n === 2;
+      const ord = online ? [me].concat(P.map((q, k) => k).filter(k => k !== me)) : P.map((q, k) => k);
+      window.__hud = { online, me, local2, order: ord.slice() };
       const g = this.g = this.add.graphics();
       const S = this.S = this.game_.S;
       // ---- per-player panels: P1 big (top-left), P2 compact-full below it, P3..P4 mini rows
-      this.pan = P.map((p, k) => {
-        const c = p.char, col = CO.PLAYER_COLORS[k] || 0xffffff, o = { p, k, c, col };
-        if (k === 0) {
-          o.big = true; o.x = 136; this.add.image(70, 70, c.portrait).setDisplaySize(104, 104);
-          const fr = this.add.graphics(); fr.lineStyle(4, coop ? col : (c.color || 0x6fd3ff)); fr.strokeRoundedRect(18, 18, 104, 104, 10);
-          const nmT = this.add.text(136, 10, c.name, CO.style(28, '#ffffff'));
-          this.add.text(136 + nmT.width + 10, 17, '"' + c.title + '"', CO.style(15, '#9aa7c7'));
-          o.hpT = this.add.text(452, 52, '', CO.style(15)).setOrigin(1, 0.5); o.mpT = this.add.text(452, 78, '', CO.style(13, '#cfe8ff')).setOrigin(1, 0.5);
-          o.otT = this.add.text(136, 104, c.otName || 'CLOCK-OUT', CO.style(14, '#ffd34d')).setOrigin(0, 0.5);
-          if (coop) this.badge(18, 18, 'P1', col);
+      this.pan = ord.map((k, j) => {
+        const p = P[k], c = p.char, col = CO.PLAYER_COLORS[k] || 0xffffff, o = { p, k, c, col, bx: 0 };
+        if (j === 0 || (local2 && j === 1)) {
+          const R = j === 1, bx = o.bx = R ? 1280 - 472 : 0, px = R ? 1280 - 70 : 70;   // right-hand panel: portrait on the outer edge
+          o.big = true; o.x = 136 + bx; this.add.image(px, 70, c.portrait).setDisplaySize(104, 104);
+          const fr = this.add.graphics(); fr.lineStyle(4, coop ? col : (c.color || 0x6fd3ff)); fr.strokeRoundedRect(px - 52, 18, 104, 104, 10);
+          const nx = R ? 1280 - 136 - 318 : 136, nmT = this.add.text(nx, 10, c.name, CO.style(28, '#ffffff')); o.nx = nx;
+          if (!local2) this.add.text(nx + nmT.width + 10, 17, '"' + c.title + '"', CO.style(15, '#9aa7c7'));
+          o.hpT = this.add.text(nx + 316, 52, '', CO.style(15)).setOrigin(1, 0.5); o.mpT = this.add.text(nx + 316, 78, '', CO.style(13, '#cfe8ff')).setOrigin(1, 0.5);
+          o.otT = this.add.text(nx, 104, c.otName || 'CLOCK-OUT', CO.style(14, '#ffd34d')).setOrigin(0, 0.5);
+          if (coop) this.badge(px - 52, 18, 'P' + (k + 1) + (online ? ' · YOU' : ''), col);
+        } else if (online) {   // team-mate: compact row (portrait, name, HP + meter)
+          const y = 146 + (j - 1) * 50; o.y = y; o.mini = true; this.add.image(36, y + 20, c.portrait).setDisplaySize(40, 40);
+          const fr = this.add.graphics(); fr.lineStyle(3, col); fr.strokeRoundedRect(16, y, 40, 40, 6);
+          this.add.text(64, y - 2, 'P' + (k + 1) + ' ' + c.name.toUpperCase() + (CO.net.tagName(k) ? ' · ' + CO.net.tagName(k) : ''), CO.style(14, hex(col)));
         } else if (k === 1) {
           o.x = 108; const y = 146; this.add.image(58, y + 40, c.portrait).setDisplaySize(80, 80);
           const fr = this.add.graphics(); fr.lineStyle(3, col); fr.strokeRoundedRect(18, y, 80, 80, 8); this.badge(18, y, 'P2', col);
@@ -532,27 +594,29 @@
         }
         return o;
       });
-      if (coop) this.add.text(640, 714, 'CO-OP · ' + n + ' PLAYERS', CO.style(16, '#cfe8ff')).setOrigin(0.5, 1).setAlpha(0.7);
+      if (coop) this.add.text(online ? 1268 : 640, 714, (online ? 'ONLINE · ' : 'CO-OP · ') + n + ' PLAYERS', CO.style(16, '#cfe8ff')).setOrigin(online ? 1 : 0.5, 1).setAlpha(0.7);
       // combo (shows the best combo among players)
-      this.combo = this.add.text(1250, 40, '', CO.style(64, '#ffffff')).setOrigin(1, 0);
-      this.hits = this.add.text(1250, 104, 'HITS', CO.style(30, '#6fd3ff')).setOrigin(1, 0).setVisible(false);
-      this.otBadge = this.add.text(1250, 140, 'OVERTIME!', CO.style(40, '#ffc83d')).setOrigin(1, 0).setVisible(false);
+      const cy = local2 ? 150 : 40, tcx = local2 ? 640 : 724;
+      this.combo = this.add.text(1250, cy, '', CO.style(64, '#ffffff')).setOrigin(1, 0);
+      this.hits = this.add.text(1250, cy + 64, 'HITS', CO.style(30, '#6fd3ff')).setOrigin(1, 0).setVisible(false);
+      this.otBadge = this.add.text(1250, cy + 100, 'OVERTIME!', CO.style(40, '#ffc83d')).setOrigin(1, 0).setVisible(false);
       // top centre
-      this.floorT = this.add.text(724, 16, '', CO.style(20, '#ffffff')).setOrigin(0.5, 0);
-      this.clockT = this.add.text(724, 42, '', CO.style(22, '#ffd34d')).setOrigin(0.5, 0);
-      this.cdT = this.add.text(724, 72, '', CO.style(26, '#ffe9a8')).setOrigin(0.5, 0).setVisible(false);
+      this.floorT = this.add.text(tcx, 16, '', CO.style(local2 ? 16 : 20, '#ffffff')).setOrigin(0.5, 0);
+      this.clockT = this.add.text(tcx, 42, '', CO.style(22, '#ffd34d')).setOrigin(0.5, 0);
+      this.cdT = this.add.text(tcx, 72, '', CO.style(26, '#ffe9a8')).setOrigin(0.5, 0).setVisible(false);
       // skills bars: solo = centred; co-op = P1 left, P2 right (the mock-up)
       this.touch = CO.touchOn(); this.skills = [];
       const pad = CO.lastDevice === 'gamepad', acts = ['s1', 's2', 's3', 'ult'];
-      P.slice(0, 2).forEach((p, k) => {
-        const c = p.char, all = c.skills.concat([Object.assign({ cost: 0 }, c.ult)]), sz = coop ? 70 : 84;
-        const x0 = coop ? (k === 0 ? 90 : 800) : 640 - 165, pitch = coop ? 92 : 110, y = coop ? 656 : 650;
-        if (coop) this.add.text(x0 - 36, y - 62, 'P' + (k + 1) + ' · ' + c.name.toUpperCase(), CO.style(14, hex(CO.PLAYER_COLORS[k]))).setOrigin(0, 0.5);
+      const skOwners = online ? [me] : P.slice(0, 2).map((q, k) => k), two = skOwners.length > 1;   // online: only YOUR skills
+      skOwners.forEach(k => { const p = P[k];
+        const c = p.char, all = c.skills.concat([Object.assign({ cost: 0 }, c.ult)]), sz = two ? 70 : 84;
+        const x0 = two ? (k === 0 ? 90 : 800) : 640 - 165, pitch = two ? 92 : 110, y = two ? 656 : 650;
+        if (two) this.add.text(x0 - 36, y - 62, 'P' + (k + 1) + ' · ' + c.name.toUpperCase(), CO.style(14, hex(CO.PLAYER_COLORS[k]))).setOrigin(0, 0.5);
         all.forEach((sk, i) => {
           const x = x0 + i * pitch, ic = this.add.image(x, y, sk.icon).setDisplaySize(sz, sz);
-          const lab = pad && k === 0 ? CO.padLabel(acts[i]).split(' / ')[0] : CO.keyLabel(k, acts[i]).split(' / ')[0];
-          const kt = this.add.text(x - sz / 2 + 2, y - sz / 2 - 2, lab, CO.style(coop ? 13 : 16, '#ffffff')).setOrigin(0, 0);
-          const nm = this.add.text(x, y + sz / 2 + 4, sk.name, CO.style(coop ? 11 : 13, '#cfe8ff')).setOrigin(0.5, 0);
+          const kb = online ? 0 : k, lab = pad && kb === 0 ? CO.padLabel(acts[i]).split(' / ')[0] : CO.keyLabel(kb, acts[i]).split(' / ')[0];
+          const kt = this.add.text(x - sz / 2 + 2, y - sz / 2 - 2, lab, CO.style(two ? 13 : 16, '#ffffff')).setOrigin(0, 0);
+          const nm = this.add.text(x, y + sz / 2 + 4, sk.name, CO.style(two ? 11 : 13, '#cfe8ff')).setOrigin(0.5, 0);
           this.skills.push({ ic, kt, nm, x, y, sk, i, k, sz });
         });
       });
@@ -581,7 +645,7 @@
       this.base = S.num ? 'STAGE ' + S.num + ' · ' + S.name : 'SURVIVAL · ' + (S.arenaName || '');
       this.floorLabel = this.base;
     }
-    badge(x, y, txt, col) { this.add.rectangle(x + 14, y + 11, 28, 20, col).setStrokeStyle(2, 0x10162e); this.add.text(x + 14, y + 11, txt, CO.style(13, '#10162e')).setOrigin(0.5); }
+    badge(x, y, txt, col) { const t = this.add.text(0, y + 11, txt, CO.style(13, '#10162e')).setOrigin(0.5).setDepth(2), w = Math.max(28, t.width + 10); t.x = x + w / 2; this.add.rectangle(x + w / 2, y + 11, w, 20, col).setStrokeStyle(2, 0x10162e).setDepth(1); }
     setSkillsVisible(v) { this.skills.forEach(s => { s.ic.setVisible(v); s.kt.setVisible(v); s.nm.setVisible(v); }); this.skG.setVisible(v); }
     // v5.1 co-op: the other story characters' boss replies play after the lead's
     bossExtra(sim) {
@@ -615,7 +679,7 @@
         case 'bossintro': { const SY = CO.story(CO.curChars), rp = sim.boss && sim.mode !== 'survival' && SY.boss[sim.boss.type]; this.floorLabel = base + ' · BOSS'; this.show('BOSS', e.text + (rp ? '\n' + CO.CHARACTERS[CO.storyLead(CO.curChars)].name + ': "' + rp + '"' : ''), '#ff9a2e', rp ? 2800 : 2000); this.bossExtra(sim); window.__bossReply = rp || null; this.bossName.setText(e.name).setVisible(true); break; }
         case 'banner': this.show(e.msg, e.sub, '#ff9a2e', 1600); break;
         case 'overtime': { const q = sim.players.find(o => o.id === e.p); this.show((q && q.char.otName === 'ULT' ? 'NITRO' : 'OVERTIME') + '!', '50+ hits — damage up, meter fills faster!', '#ffc83d', 1000); this.tweens.add({ targets: this.otBadge, scale: { from: 1.6, to: 1 }, duration: 300 }); break; }
-        case 'bossdown': this.show('BOSS DEFEATED', '"' + sim.boss.def.defeat[0] + '"', '#ffd34d', 2200); break;
+        case 'bossdown': this.show('BOSS DEFEATED', '"' + (sim.boss && sim.boss.def && sim.boss.def.defeat ? sim.boss.def.defeat[0] : '') + '"', '#ffd34d', 2200); break;
         case 'clear': this.goOn = false; this.show(e.result.scene === 'lobby' ? 'THE EXIT IS BLOCKED!' : S.num === 7 ? CO.story(CO.curChars).goal + '!' : 'STAGE CLEAR!', [(CO.story(CO.curChars).stages[S.id] || {}).clear || S.clear].concat(CO.storyExtras(CO.curChars).slice(0, 2).map(c => (CO.STORIES[c].stages[S.id] || {}).clear ? CO.CHARACTERS[c].name + ': ' + CO.STORIES[c].stages[S.id].clear : '').filter(Boolean)).join('\n'), e.result.scene === 'lobby' ? '#ff9a2e' : '#8ee35a', 2400);
           { const SY = CO.story(CO.curChars); if (SY.clearFlash) { const ft = this.add.text(640, 600, SY.clearFlash, CO.style(30, '#ffd678')).setOrigin(0.5).setDepth(60).setAlpha(0); window.__flash = SY.clearFlash;
             this.tweens.add({ targets: ft, alpha: 1, duration: 160, yoyo: true, repeat: 4, hold: 140, onComplete: () => ft.destroy() }); } }
@@ -657,11 +721,12 @@
       for (const o of this.pan) {
         const p = o.p, c = o.c, ready = p.ot >= 100; if (p.combo > best.combo) best = p;
         const hpCol = !p.alive ? 0x555a6a : p.hp < p.maxhp * 0.3 && Math.floor(t / 200) % 2 ? 0xff7a7a : (o.k === 1 ? 0xff8a3c : 0xe8384f);
-        if (o.big) {
-          this.bar(136, 44, 318, 18, p.hp / p.maxhp, hpCol); this.bar(136, 72, 318, 12, p.mp / p.maxmp, 0x3fa8ff);
-          this.bar(236, 98, 218, 12, p.ot / 100, ready ? (Math.floor(t / 120) % 2 ? 0xffffff : 0xffc83d) : 0xffc83d);
+        if (o.big) { const X = o.nx;
+          this.bar(X, 44, 318, 18, p.hp / p.maxhp, hpCol); this.bar(X, 72, 318, 12, p.mp / p.maxmp, 0x3fa8ff);
+          this.bar(X + 100, 98, 218, 12, p.ot / 100, ready ? (Math.floor(t / 120) % 2 ? 0xffffff : 0xffc83d) : 0xffc83d);
           o.otT.setText(ready ? 'READY!' : (c.otName || 'CLOCK-OUT')); o.hpT.setText(Math.ceil(p.hp) + ' / ' + p.maxhp); o.mpT.setText((c.mpName || 'CAFFEINE') + ' ' + Math.floor(p.mp));
-        } else if (o.k === 1) {
+        } else if (o.mini) { const y = o.y; this.bar(64, y + 22, 150, 8, p.hp / p.maxhp, hpCol); this.bar(222, y + 22, 50, 8, p.ot / 100, 0xffc83d); }
+        else if (o.k === 1) {
           const y = o.y; this.bar(108, y + 24, 258, 14, p.hp / p.maxhp, hpCol); this.bar(108, y + 44, 192, 9, p.mp / p.maxmp, 0x3fa8ff);
           this.bar(166, y + 62, 134, 9, p.ot / 100, ready ? (Math.floor(t / 120) % 2 ? 0xffffff : 0xffc83d) : 0xffc83d);
           o.otT.setText(ready ? 'READY!' : (c.otName || 'ULT')); o.hpT.setText(Math.ceil(p.hp) + '/' + p.maxhp); o.mpT.setText((c.mpName || 'CAFFEINE') + ' ' + Math.floor(p.mp));
@@ -686,7 +751,7 @@
       const go = this.goOn && sim.state === 'roam' && !sim.locked;
       this.goT.setVisible(go && Math.floor(t / 350) % 2 === 0); this.goSub.setVisible(go); if (go) this.goT.x = 1240 + Math.sin(t / 120) * 10;
       // blind white-out
-      const bl = this.n === 1 ? sim.players[0].blind : Math.max(...sim.players.map(q => q.blind)) * 0.5; this.white.setAlpha(bl > 0 ? Math.min(this.n === 1 ? 0.92 : 0.45, bl / 30) : 0);
+      const bl = this.n === 1 ? sim.players[0].blind : this.online ? (sim.players[this.me] || sim.players[0]).blind : Math.max(...sim.players.map(q => q.blind)) * 0.5; this.white.setAlpha(bl > 0 ? Math.min(this.n === 1 ? 0.92 : 0.45, bl / 30) : 0);
       // skills
       if (!this.touch) {
         const sg = this.skG; sg.clear();
@@ -702,7 +767,7 @@
         const b = sim.boss; this.bossName.setVisible(true);
         this.bar(340, 118, 600, 16, b.hp / b.maxhp, b.frozen ? 0x9ff8ff : b.phase === 2 ? 0xff9a2e : 0xffc83d);
         g.fillStyle(0xffffff, 0.8); g.fillRect(340 + 300, 116, 2, 20);
-        this.bar(340, 140, 600, 5, b.state === 'dizzy' ? 0 : b.poise / b.def.poise, 0x9ff8ff);
+        this.bar(340, 140, 600, 5, b.state === 'dizzy' || !b.def ? 0 : b.poise / b.def.poise, 0x9ff8ff);
       } else this.bossName.setVisible(false);
     }
   }

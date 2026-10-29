@@ -115,11 +115,16 @@
   class Title extends Phaser.Scene {
     constructor() { super('Title'); }
     create(d) {
-      d = d || {}; this.add.image(640, 360, 'bg_title').setDisplaySize(1280, 720);
+      d = d || {};
+      // v5.3: back at the title nothing from an online / co-op session carries over into the next mode
+      if (CO.net && (CO.net.session || CO.net.mode)) try { CO.net.leave(); } catch (e) {}
+      CO.curChars = null; CO.activePlayers = 1; window.__story = null; if (CO.sel.chars.length > 1) CO.sel.chars = CO.sel.chars.slice(0, 1);
+      ['HUD', 'Pause', 'Ambient', 'Touch'].forEach(k => { try { if (this.scene.isActive(k) || this.scene.isSleeping(k) || this.scene.isPaused(k)) this.scene.stop(k); } catch (e) {} });
+      this.add.image(640, 360, 'bg_title').setDisplaySize(1280, 720);
       const sh = this.add.graphics(); sh.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0, 0.85, 0); sh.fillRect(0, 280, 700, 440);
       CO.audio.play('title'); this.fresh = new CO.Fresh(this, d.fromIntro ? 400 : d.quiet ? 150 : 0);
       // v5 menu: STORY MODE / SURVIVAL MODE / SETTINGS, each with its own submenu (Esc / BACK climbs one level)
-      const page = this.page = d.page || 'main', coopN = this.coopN = Math.max(2, Math.min(CO.MAX_PLAYERS, CO.sel.chars.length)), go = (pg) => this.scene.restart({ page: pg, quiet: true });
+      const page = this.page = d.page || 'main', coopN = this.coopN = 2, go = (pg) => this.scene.restart({ page: pg, quiet: true });
       const online = mode => { this.cameras.main.fadeOut(200); this.time.delayedCall(220, () => this.scene.start('Lobby', { mode })); };
       const P = CO.save.progress(), SL = CO.save.survLevel();
       const PAGES = {
@@ -133,7 +138,7 @@
           { label: 'CO-OP', size: 26, cb: () => go('storycoop') },
           { label: 'BACK', size: 22, cb: () => go('main') } ] },
         storycoop: { head: 'STORY CO-OP', back: 'story', items: [
-          { label: () => 'LOCAL  ◀ ' + this.coopN + ' PLAYERS ▶', size: 24, adjust: d => { this.coopN = Phaser.Math.Clamp(this.coopN + d, 2, CO.MAX_PLAYERS); }, cb: () => this.pick(this.coopN, { scene: 'StageSelect' }, 'storycoop') },
+          { label: 'LOCAL CO-OP  (2 PLAYERS)', size: 24, cb: () => this.pick(this.coopN, { scene: 'StageSelect' }, 'storycoop') },
           { label: 'ONLINE', sub: '(host or join)', size: 24, cb: () => online('story') },
           { label: 'BACK', size: 22, cb: () => go('story') } ] },
         surv: { head: 'SURVIVAL MODE', back: 'main', items: [
@@ -142,7 +147,7 @@
           { label: 'BACK', size: 22, cb: () => go('main') } ] },
         survcoop: { head: 'SURVIVAL CO-OP', back: 'surv', items: [
           { label: 'ONLINE', sub: '(host or join)', size: 24, cb: () => online('survival') },
-          { label: () => 'LOCAL  ◀ ' + this.coopN + ' PLAYERS ▶', size: 24, adjust: d => { this.coopN = Phaser.Math.Clamp(this.coopN + d, 2, CO.MAX_PLAYERS); }, cb: () => this.pick(this.coopN, { scene: 'SurvSelect' }, 'survcoop') },
+          { label: 'LOCAL CO-OP  (2 PLAYERS)', size: 24, cb: () => this.pick(this.coopN, { scene: 'SurvSelect' }, 'survcoop') },
           { label: 'BACK', size: 22, cb: () => go('surv') } ] },
         settings: { head: 'SETTINGS', back: 'main', items: [
           { label: 'HOW TO PLAY', size: 24, cb: () => this.scene.start('HowTo', { back: 'Title' }) },
@@ -184,7 +189,7 @@
       this.lock = this.add.text(860, 330, '🔒 LOCKED', CO.style(48, '#ffffff')).setOrigin(0.5);
       const items = CO.STORY_ORDER.map((id, k) => { const S = CO.STAGES[id], g = P.grades[id]; return { label: (k + 1) + '. ' + S.name, sub: g ? '[' + g + ']' : (k < P.unlocked ? '' : '🔒'), size: 22, disabled: k >= P.unlocked, cb: () => this.start(id) }; });
       // v4: fighter / co-op line (cycles LEMON -> WEISHENG -> CO-OP 2P -> ...) and the two Survival arenas
-      const IDS = Object.keys(CO.CHARACTERS), opts = IDS.map(c => [c]).concat([IDS.slice(0, 2)], IDS.length > 2 ? [IDS.slice(0, 3)] : []), cur = () => Math.max(0, opts.findIndex(o => o.join() === CO.sel.chars.join()));
+      const IDS = Object.keys(CO.CHARACTERS), opts = IDS.map(c => [c]).concat([IDS.slice(0, 2)]), cur = () => Math.max(0, opts.findIndex(o => o.join() === CO.sel.chars.join()));
       const fl = () => CO.sel.chars.length > 1 ? 'CO-OP · ' + CO.sel.chars.map(c => CO.CHARACTERS[c].name).join(' + ') : 'FIGHTER · ' + CO.CHARACTERS[CO.sel.chars[0]].name;
       items.push({ label: () => '◀ ' + fl() + ' ▶', size: 18, adjust: d => { CO.sel.chars = opts[(cur() + d + opts.length) % opts.length].slice(); CO.saveSel(); }, cb: () => this.scene.start('CharSelect', { n: CO.sel.chars.length, next: { scene: 'StageSelect' }, back: 'StageSelect' }) });
       items.push({ label: () => 'SURVIVAL  ◀ ' + CO.STAGES[CO.sel.arena].arenaName + ' ▶', size: 18, adjust: d => { CO.sel.arena = ARN[(ARN.indexOf(CO.sel.arena) + d + ARN.length) % ARN.length]; CO.saveSel(); }, cb: () => { this.cameras.main.fadeOut(250); this.time.delayedCall(270, () => CO.enterGame(this, 'Game', { stage: CO.sel.arena }, { back: 'StageSelect', label: 'Survival — ' + CO.STAGES[CO.sel.arena].arenaName })); } });
@@ -249,10 +254,9 @@
       const lead = CO.storyLead(data.chars || CO.curChars || CO.sel.chars), nm = (CO.CHARACTERS[lead] || {}).name || 'Lemon', cap = nm.charAt(0) + nm.slice(1).toLowerCase();
       const swap = p => lead === 'lemon' ? p : p.map(q => Object.assign({}, q, { t: q.t.replace(/Lemon/g, cap).replace(/LEMON/g, nm), s: q.s.replace(/Lemon/g, cap).replace(/LEMON/g, nm).replace(/STARSHIFT/g, CO.STORIES[lead].goal) }));
       const OS = data.scene && CO.STORIES[lead] && CO.STORIES[lead].scenes && CO.STORIES[lead].scenes[data.scene];   // v5.1: own cutscene (no Lemon art) for non-Lemon leads
-      this.panels = data.panels || (OS ? OS.panels : data.scene ? swap(CO.STORY.scenes[data.scene].panels) : CO.storyIntro(data.chars || CO.sel.chars));
+      this.panels = data.panels || (OS ? OS.panels : data.scene ? swap(CO.STORY.scenes[data.scene].panels) : CO.storyIntro(data.chars || CO.curChars || CO.sel.chars));
       window.__story = { lead, scene: data.story || data.scene || 'intro', n: this.panels.length };
       this.bg = this.add.image(640, 360, OS ? OS.img : data.scene ? CO.STORY.scenes[data.scene].img : (this.panels[0] && this.panels[0].img) || 'bg_intro').setDisplaySize(1280, 720);
-      this.tweens.add({ targets: this.bg, scale: this.bg.scale * 1.06, duration: 16000 });
       const g = this.add.graphics(); g.fillStyle(0x000000, 0.72); g.fillRect(0, 520, 1280, 200);
       this.title = this.add.text(640, 575, '', CO.style(42, '#ffd34d')).setOrigin(0.5);
       this.sub = this.add.text(640, 640, '', CO.style(24, '#ffffff', { strokeThickness: 4, align: 'center', wordWrap: { width: 1100 } })).setOrigin(0.5);
@@ -274,10 +278,25 @@
       if (this.i >= P.length) return this.go();
       CO.audio.sfx(this.i === 0 ? 'tick' : 'ui'); this.fresh.relock(300);   // input lock on every new line
       if (P[this.i].img) this.bg.setTexture(P[this.i].img).setDisplaySize(1280, 720);
+      this.panelFx(P[this.i]);
       this.title.setText(P[this.i].t).setScale(0.6).setAlpha(0); this.tweens.add({ targets: this.title, scale: 1, alpha: 1, duration: 260, ease: 'Back.out' });
       this.full = P[this.i].s; this.ch = 0; this.sub.setText(''); this.doneAt = 0; this.lineDone = false;
       window.__cutscene = (this.d.scene || 'intro') + ':' + this.i;
       if (CO.net && CO.net.isHost() && CO.net.inPlay) CO.net.bcast({ t: 'cut', key: this.scene.key, i: this.i, auto: this.auto });   // v5 online: the host turns the pages
+    }
+    // v5.3: per-panel camera move (alternating push-in / pan) + optional fx: ping, shake, flash, whoosh, crash, dust
+    panelFx(p) {
+      const b = this.bg, cam = this.cameras.main, k = this.i % 3, sh = CO.settings.shake !== false;
+      if (this.kb) this.kb.stop(); b.setDisplaySize(1280, 720); const s0 = b.scaleX;
+      b.setPosition(k === 1 ? 620 : k === 2 ? 660 : 640, 360).setScale(s0 * (k === 0 ? 1.0 : 1.08));
+      this.kb = this.tweens.add({ targets: b, scaleX: s0 * (k === 0 ? 1.08 : 1.1), scaleY: s0 * (k === 0 ? 1.08 : 1.1), x: k === 1 ? 660 : k === 2 ? 620 : 640, duration: 7000, ease: 'Sine.inOut' });
+      const f = p.fx; if (!f) return;
+      if (f === 'ping') { CO.audio.sfx('buzz'); this.time.delayedCall(250, () => CO.audio.sfx('ding')); if (sh) cam.shake(300, 0.003); }
+      else if (f === 'shake') { CO.audio.sfx('crack'); if (sh) cam.shake(350, 0.008); }
+      else if (f === 'flash') { CO.audio.sfx('ready'); cam.flash(380, 255, 255, 255); }
+      else if (f === 'whoosh') { CO.audio.sfx('whoosh'); if (sh) cam.shake(600, 0.004); }
+      else if (f === 'crash') { CO.audio.sfx('crash'); CO.audio.sfx('shatter'); cam.flash(250, 255, 240, 200); if (sh) cam.shake(700, 0.016); }
+      else if (f === 'dust') { CO.audio.sfx('crack'); for (let n = 0; n < 26; n++) { const d = this.add.circle(Phaser.Math.Between(0, 1280), Phaser.Math.Between(300, 520), Phaser.Math.Between(4, 14), 0xd8c8a8, 0.5); this.tweens.add({ targets: d, y: d.y - Phaser.Math.Between(60, 200), alpha: 0, duration: Phaser.Math.Between(1200, 2600), onComplete: () => d.destroy() }); } }
     }
     // first press completes the typewriter line, the next press advances
     press() { if (this.leaving) return; if (this.ch < this.full.length) { this.ch = this.full.length; this.sub.setText(this.full); this.doneAt = performance.now(); this.fresh.relock(150); this.netDone(); } else this.next(); }
@@ -309,7 +328,8 @@
   class Pause extends Phaser.Scene {
     constructor() { super('Pause'); }
     create() {
-      this.add.rectangle(640, 360, 1280, 720, 0x060914, 0.78).setInteractive();
+      const onl = CO.net && CO.net.inPlay && (CO.net.isClient() || CO.net.isHost());
+      this.add.rectangle(640, 360, 1280, 720, 0x060914, onl ? 0.55 : 0.78).setInteractive();
       this.add.text(640, 120, 'PAUSED', CO.style(64, '#ffd34d')).setOrigin(0.5);
       this.add.text(640, 175, '"Taking a quick break." (Do NOT tell the Micromanager.)', CO.style(20, '#cfe8ff')).setOrigin(0.5);
       const resume = () => { this.scene.stop(); this.scene.resume('Game'); this.scene.resume('HUD'); this.scene.resume('Ambient'); const g = this.scene.get('Game'); g.syncInput(); };
@@ -324,7 +344,7 @@
         { label: 'SETTINGS', cb: () => { this.scene.pause(); this.scene.launch('Settings', { from: 'Pause' }); } },
         { label: 'QUIT TO TITLE', cb: () => { this.scene.stop(); this.scene.get('Game').quit(); } },
       ], { w: 420, align: 'center', onBack: resume });
-      if (cl) this.add.text(640, 520, 'Online: the game keeps running for everyone while you are here.', CO.style(18, '#9aa7c7')).setOrigin(0.5);
+      if (onl) this.add.text(640, 520, 'Online: the game keeps running for everyone while you are here.', CO.style(18, '#9aa7c7')).setOrigin(0.5);
       const tc = CO.touchOn();
       this.add.text(640, 600, tc ? 'Touch: left stick to move · ATK / HVY / JUMP / DASH · skill icons · CLOCK OUT when the gold bar is full'
         : 'Move ' + ['up', 'left', 'down', 'right'].map(a => CO.keyName(CO.binds.keys(0, a)[0])).join('') + ' · Light ' + CO.keyLabel(0, 'light') + ' · Heavy ' + CO.keyLabel(0, 'heavy') + ' (hold to charge) · Jump ' + CO.keyLabel(0, 'jump') + ' · Dash ' + CO.keyLabel(0, 'dash') + '\nSkills ' + ['s1', 's2', 's3'].map(a => CO.keyLabel(0, a)).join(' / ') + ' · Clock Out ' + CO.keyLabel(0, 'ult') + ' · Pause ' + CO.keyLabel(0, 'pause') + '   —   change keys: TITLE → CONTROLS', CO.style(17, '#9aa7c7', { align: 'center' })).setOrigin(0.5);

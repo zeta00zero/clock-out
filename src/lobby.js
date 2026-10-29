@@ -42,7 +42,7 @@
     stepWhere(dd) {
       const L = N.lobby;
       if (L.mode === 'survival') { const mx = Math.max(1, CO.save.survLevel().max); L.level = Math.abs(dd) >= 10 ? (L.level >= mx ? 1 : Math.min(mx, L.level === 1 ? 10 : L.level + 10)) : Phaser.Math.Clamp(L.level + dd, 1, mx); }
-      else { const O = CO.STORY_ORDER, un = Math.max(1, CO.save.progress().unlocked || 1); let i = O.indexOf(L.stage); i = Abs(dd) >= 10 ? (i + 1) % un : Phaser.Math.Clamp(i + dd, 0, un - 1); L.stage = O[i]; }
+      else { const O = CO.STORY_ORDER, un = CO.STORY_ORDER.length;   /* v5.3: online, all 7 stages are open */ let i = O.indexOf(L.stage); i = Abs(dd) >= 10 ? (i + 1) % un : Phaser.Math.Clamp(i + dd, 0, un - 1); L.stage = O[i]; }
       N.pushLobby();
     }
     doHost() { this.stat.setText('Opening a room on the PeerJS server…'); N.hostRoom(ok => { if (!this.sys.isActive()) return; if (ok) this.build('room'); else { this.stat.setText(N.err); } }); }

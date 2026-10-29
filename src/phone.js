@@ -57,15 +57,22 @@
       this.input.keyboard.on('keydown', () => this.finish(true)); this.input.on('pointerdown', () => this.finish(true));
       this.padDown = false;
       this.ev = []; const at = (ms, fn) => this.ev.push({ ms, fn, done: false });
-      at(150, () => CO.audio.sfx('buzz')); at(320, () => CO.audio.sfx('phonering')); at(700, () => CO.audio.sfx('buzz')); at(1050, () => CO.audio.sfx('buzz'));
-      at(1300, () => { CO.audio.sfx('throw'); CO.audio.sfx('whoosh'); this.desk.setVisible(false); this.bubble.setVisible(false); this.throwI.setVisible(true); this.lines.setVisible(true); this.cameras.main.shake(160, 0.006); });
-      at(2300, () => { CO.audio.sfx('crack'); this.throwI.setVisible(false); this.lines.setVisible(false); this.glassC.setVisible(true); this.cameras.main.shake(140, 0.008); });
-      at(2650, () => CO.audio.sfx('crack'));
+      // v5.3: ~1.8x slower (event times are in intro-time; update() advances at 1/1.8), synthesized score, ping + buzz with device vibration,
+      // synthesized glass crack / shatter, stronger shakes, impact flash, ripple rings and glitter
+      CO.audio.play('intro53'); this.fx = this.add.graphics().setDepth(140); this.rings = []; this.sparks = [];
+      const vib = p => { try { if (navigator.vibrate && CO.settings.vibrate !== false) navigator.vibrate(p); } catch (e) {} window.__vib = (window.__vib || 0) + 1; };
+      const buzz = () => { CO.audio.sfx('ibuzz'); vib([140, 70, 140]); this.cameras.main.shake(180, 0.004); this.rings.push({ x: 760, y: 330, t: this.t, c: 0xcfe8ff }); };
+      at(150, buzz); at(330, () => { CO.audio.sfx('iping'); this.tweens.add({ targets: this.bubble, scale: { from: 0.92, to: 1 }, duration: 260, ease: 'Back.out' }); this.rings.push({ x: 950, y: 130, t: this.t, c: 0xffffff }); });
+      at(320, () => CO.audio.sfx('phonering')); at(700, buzz); at(1050, buzz);
+      at(1300, () => { CO.audio.sfx('throw'); CO.audio.sfx('whoosh'); this.desk.setVisible(false); this.bubble.setVisible(false); this.throwI.setVisible(true); this.lines.setVisible(true); this.cameras.main.shake(260, 0.012); });
+      at(2300, () => { CO.audio.sfx('icrack'); CO.audio.sfx('crack'); vib(90); this.throwI.setVisible(false); this.lines.setVisible(false); this.glassC.setVisible(true); this.cameras.main.shake(240, 0.016); this.flash.setAlpha(0.7); this.tweens.add({ targets: this.flash, alpha: 0, duration: 260 }); this.rings.push({ x: 640, y: 360, t: this.t, c: 0xffffff, big: 1 }); });
+      at(2650, () => { CO.audio.sfx('icrack'); this.cameras.main.shake(160, 0.01); });
       at(3000, () => this.shatter());
     }
     zoom(o, z, cx, cy) { const cw = 1280 / z, ch = 720 / z, x0 = Phaser.Math.Clamp(cx - cw / 2, 0, 1280 - cw), y0 = Phaser.Math.Clamp(cy - ch / 2, 0, 720 - ch); o.setScale(z); o.x = -x0 * z; o.y = -y0 * z; }
     shatter() {
-      if (this.stage) return; this.stage = 1; CO.audio.sfx('shatter'); this.cameras.main.shake(220, 0.012);
+      if (this.stage) return; this.stage = 1; CO.audio.sfx('ishatter'); CO.audio.sfx('shatter'); this.cameras.main.shake(420, 0.024); try { navigator.vibrate && navigator.vibrate([60, 40, 200]); } catch (e) {}
+      for (let i = 0; i < 70; i++) { const a = Math.random() * 6.283, v = 200 + Math.random() * 700; this.sparks.push({ x: 640, y: 360, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 150, t: this.t, s: 1 + Math.random() * 3 }); }
       this.zoom(this.glassC, 1, 640, 360);
       // bake the glass frame (still + code text + all cracks) once, then cut one small canvas per cell
       const W = 1280, H = 720, base = document.createElement('canvas'); base.width = W; base.height = H; const x = base.getContext('2d');
@@ -91,14 +98,17 @@
       this.flash.setAlpha(0.63);
     }
     finish(skip) {
-      if (this.leaving) return; this.leaving = true; window.__phoneIntro = skip ? 'skipped' : 'done';
+      if (this.leaving) return; this.leaving = true; window.__phoneIntro = skip ? 'skipped' : 'done'; if (this.fx) this.fx.clear();
       const clean = () => { for (const q of this.shards) if (this.textures.exists(q.im.texture.key)) { const k = q.im.texture.key; q.im.destroy(); this.textures.remove(k); } };
       if (this.stage) { clean(); this.scene.stop(); return; }   // the title is already live underneath
       if (skip) { CO.audio.sfx('ui'); this.cameras.main.fadeOut(160); this.time.delayedCall(180, () => this.scene.start('Title', { fromIntro: true })); }
       else this.scene.start('Title', { fromIntro: true, seamless: true });
     }
     update(time, dt) {
-      if (this.leaving) return; this.t += window.__introStep != null ? window.__introStep : dt * (CO.params.speed > 1 ? 4 : 1); const t = window.__introT = this.t;
+      if (this.leaving) return; this.t += window.__introStep != null ? window.__introStep : dt / 1.8 * (CO.params.speed > 1 ? 4 : 1); const t = window.__introT = this.t;
+      { const g = this.fx.clear();   // v5.3 FX: ripple rings + glitter (intro-time based)
+        for (const r of this.rings) { const u = (t - r.t) / (r.big ? 600 : 420); if (u < 1) { g.lineStyle(r.big ? 6 : 3, r.c, 0.8 * (1 - u)); g.strokeCircle(r.x, r.y, (r.big ? 60 : 30) + u * (r.big ? 520 : 140)); } }
+        for (const q of this.sparks) { const u = (t - q.t) / 1000; if (u < 1.2) { g.fillStyle(0xeaf4ff, Math.max(0, 1 - u)); g.fillCircle(q.x + q.vx * u, q.y + q.vy * u + 500 * u * u, q.s); } } }
       const pads = this.input.gamepad && this.input.gamepad.total ? this.input.gamepad.gamepads : []; for (const p of pads) if (p && p.buttons.some(b => b.pressed)) { this.finish(true); return; }
       for (const e of this.ev) if (!e.done && t >= e.ms) { e.done = true; e.fn(); }
       if (t < 1300) {
@@ -133,7 +143,8 @@
   class CharSelect extends Phaser.Scene {
     constructor() { super('CharSelect'); }
     create(d) {
-      d = this.d = d || {}; this.n = Phaser.Math.Clamp(d.n || 1, 1, CO.MAX_PLAYERS); this.picks = []; this.leaving = false;
+      d = this.d = d || {}; this.n = Phaser.Math.Clamp(d.n || 1, 1, 2);   // v5.3: local co-op is 2 players (online rooms take up to 4)
+      this.picks = []; this.leaving = false;
       this.ids = Object.keys(CO.CHARACTERS); this.cur = Math.max(0, this.ids.indexOf(CO.sel.chars[0]));
       this.add.rectangle(640, 360, 1280, 720, 0x0b0f1e); this.add.image(640, 360, 'bg_title').setDisplaySize(1280, 720).setAlpha(0.18);
       this.head = this.add.text(640, 30, '', CO.style(44, '#ffd34d')).setOrigin(0.5, 0);

@@ -7,7 +7,7 @@
 //  Classic script (no modules) so file:// keeps working; online simply reports "unavailable" without PeerJS / network.
 (function (CO) {
   const Q = (() => { try { return new URLSearchParams(location.search); } catch (e) { return new URLSearchParams(''); } })();
-  const CFG = { prefix: 'clockout-v5-', alpha: 'ABCDEFGHJKMNPQRSTUVWXYZ23456789', ver: 'clockout-v5.2', hz: 30, keyEvery: 15, delay: 100, extra: 100, snapErr: 160, pingMs: 2000, lostMs: 12000, joinMs: 15000, max: 4 };
+  const CFG = { prefix: 'clockout-v5-', alpha: 'ABCDEFGHJKMNPQRSTUVWXYZ23456789', ver: 'clockout-v5.3', hz: 30, keyEvery: 15, delay: 100, extra: 100, snapErr: 160, pingMs: 2000, lostMs: 12000, joinMs: 15000, max: 4 };
   const FLOW = new Set(['clear', 'failed', 'survArena', 'survwin']);           // never replayed on clients (the host drives scene changes)
   const SYNC = new Set(['Game', 'Cutscene', 'Intro', 'Result', 'GameOver']);    // host scene changes mirrored on every client
   const OUT = new Set(['Title', 'StageSelect', 'SurvSelect', 'CharSelect', 'HowTo']);   // host leaving play -> everyone back to the lobby
@@ -57,6 +57,7 @@
     N.session = false; N.mode = null; N.names = null; N.conns.forEach(c => { try { c.c.close(); } catch (e) {} }); N.conns = [];
     try { if (N.host) N.host.close(); } catch (e) {} N.host = null; try { if (N.uc) N.uc.close(); } catch (e) {} N.uc = null; N.motQ = []; N.hostG = null; try { if (N.peer) N.peer.destroy(); } catch (e) {} N.peer = null; N.code = null;
     N.lobby.players = []; N.me.ready = false; N.status = ''; clearTimeout(N.joinT); N.mirror = null;
+    N.inPlay = false; N.gameSlot = null; N.mySlot = 0; N.snapQ = []; N.evBuf = []; N.game = null; N.lobbyChars = null; N.gate = null; N.last = null; N.mlast = null;   // v5.3: no state leaks into solo play
   };
   N.leave = (why) => { if (N.mode === 'client') N.send({ t: 'bye' }); if (N.mode === 'host') N.bcast({ t: 'bye', why: why || 'The host closed the room.' }); setTimeout(N.reset, 80); N.session = false; };
 
@@ -90,7 +91,8 @@
   function hostMsg(R, m) {
     const L = N.lobby.players.find(p => p.slot === R.slot);
     switch (m.t) {
-      case 'in': { const I = R.inp; I.mx = m.mx || 0; I.my = m.my || 0; I.h = {}; (m.h || []).forEach(a => I.h[a] = true); (m.p || []).forEach(a => { if (a !== 'pause') I.p[a] = true; }); if (m.q != null) { R.q = m.q; R.qF = N.hostG && N.hostG.sim ? N.hostG.sim.frame : 0; } N.stats.ins++; break; }
+      case 'in': { R.inT = now(); const I = R.inp; I.mx = m.mx || 0; I.my = m.my || 0; I.h = {}; (m.h || []).forEach(a => I.h[a] = true); (m.p || []).forEach(a => { if (a !== 'pause') I.p[a] = true; }); if (m.q != null) { R.q = m.q; R.qF = N.hostG && N.hostG.sim ? N.hostG.sim.frame : 0; } N.stats.ins++; break; }
+      case 'gready': if (N.gate && N.gate.wait) N.gate.ready.add(R.slot); break;   // v5.3: this client finished loading the stage
       case 'pong': R.rtt = Date.now() - m.ts; N.stats.rtt[R.slot] = R.rtt; break;
       case 'pick': if (L && !N.inPlay && N.charFree(m.char, L)) { L.char = m.char; L.ready = false; } N.pushLobby(); break;
       case 'ready': if (L) L.ready = !!m.v; N.pushLobby(); break;
@@ -122,12 +124,15 @@
   N.start = (scene) => {
     if (!N.isHost()) return false; const L = N.lobby, P = L.players.slice().sort((a, b) => a.slot - b.slot);
     N.gameSlot = {}; P.forEach((p, k) => N.gameSlot[p.slot] = k); N.names = P.map(p => p.name); N.inPlay = true;
-    for (const R of N.conns) { R.inp = { mx: 0, my: 0, h: {}, p: {} }; tx(R.c, { t: 'start', gslot: N.gameSlot[R.slot], names: N.names }); }
-    CO.sel.chars = P.map(p => p.char); CO.curChars = CO.sel.chars.slice();
-    const chars = CO.sel.chars.slice();
+    const chars = P.map(p => p.char); N.lobbyChars = chars.slice(); CO.curChars = chars.slice();   // v5.3: host's own solo pick (CO.sel.chars) is left alone; the host (P1) leads the story
+    for (const R of N.conns) { R.inp = { mx: 0, my: 0, h: {}, p: {} }; R.inT = now(); tx(R.c, { t: 'start', gslot: N.gameSlot[R.slot], names: N.names, chars }); }
     if (L.mode === 'survival') { const lv = Phaser.Math.Clamp(L.level | 0, 1, 100); scene.scene.start('Game', { stage: CO.survArenaFor(lv), level: lv, chars }); }
-    else if (L.stage === 's1') scene.scene.start('Intro', { chars, next: 'Game', data: { stage: 's1', chars } });
-    else CO.startStage(scene, L.stage, { chars, pre: false });
+    else {   // v5.3: the host may pick any of the 7 stages; each starts with its story lead-in (intro / lobby / rooftop panels)
+      const S = CO.STAGES[L.stage], data = { stage: L.stage, chars, clock: S.clock || 0 }, lead = { s1: null, s4: 'lobby', s6: 'roof' }[L.stage];
+      if (L.stage === 's1') scene.scene.start('Intro', { chars, next: 'Game', data });
+      else if (lead) scene.scene.start('Cutscene', { scene: lead, chars, next: 'Game', data });
+      else scene.scene.start('Game', data);
+    }
     return true;
   };
 
@@ -154,7 +159,8 @@
       case 'reject': fail(m.why); break;
       case 'lobby': N.lobby = { players: m.players, mode: m.mode, stage: m.stage, level: m.level }; N.lobbyRev = (N.lobbyRev || 0) + 1; { const me = m.players.find(p => p.slot === N.me.slot); if (me) { N.me.char = me.char; N.me.ready = me.ready; } } break;
       case 'ping': N.send({ t: 'pong', ts: m.ts }); break;
-      case 'start': N.mySlot = m.gslot; N.names = m.names; N.inPlay = true; break;
+      case 'start': N.mySlot = m.gslot; N.names = m.names; N.inPlay = true; if (m.chars) { N.lobbyChars = m.chars.slice(); CO.curChars = m.chars.slice(); } break;
+      case 'cd': N.cdShow(m.ms); break;
       case 'goto': clientGoto(m); break;
       case 'cut': { const s = N.gm().getScene(m.key); if (s && s.sys.isActive() && s.panelTo) s.panelTo(m.i, m.auto); break; }
       case 'snap': { const b = JSON.stringify(m).length; N.stats.rx += b; N.stats.snaps++; N.stats.snapBytes += b; (N.snapQ = N.snapQ || []).push(m); break; }
@@ -245,7 +251,7 @@
   };
   setInterval(() => { try { N.hostSend(); } catch (e) { console.error(e); } }, 1000 / CFG.hz);
   N.hostSend = () => {
-    const g = N.hostG; if (!N.isHost() || !N.conns.length || !g || !g.sim || !N.inPlay || now() - (N.liveT || 0) > 250) return;
+    const g = N.hostG; if (!N.isHost() || !N.conns.length || !g || !g.sim || !N.inPlay || now() - (N.liveT || 0) > 1500) return;
     if (!REG) buildReg(); const t0 = now(), sim = g.sim; N.tk = (N.tk || 0) + 1;
     const ents = new Map(); for (const L of ENT) for (const e of sim[L]) ents.set(e, 1); if (sim.boss) ents.set(sim.boss, 1);
     // --- motion stream ---
@@ -303,7 +309,7 @@
     const t = now(), me = myId(g), predicting = M.pp && !M.adopt;
     const get = id => M.store.get(id) || M.grave.get(id) || { id, x: 0, y: 0, z: 0, alive: false };
     const dec = v => { if (v === null || typeof v !== 'object') return v; if (Array.isArray(v)) return v.map(dec); if (v.$r !== undefined) return get(v.$r); if (v.$d !== undefined) return PATH.get(v.$d); const o = {}; for (const k in v) o[k] = dec(v[k]); return o; };
-    for (const s of Qs) {
+    for (const s of Qs) { try {   // v5.3: one bad snapshot must not abort the rest (the next keyframe heals the mirror)
       for (const id in s.e) if (!M.store.has(+id)) M.store.set(+id, M.grave.get(+id) || { id: +id });
       for (const id in s.e) {
         const o = M.store.get(+id), d = s.e[id], mine = +id === me, H = M.hs.get(+id);
@@ -329,7 +335,7 @@
         if (predicting && ev.p === me && LOCALEV.has(ev.t) && t - M.levT < 1500) continue;   // already played locally
         try { g.onEvent(ev); } catch (x) { console.warn('ev', ev.t, x); }
       }
-    }
+    } catch (x) { window.__snapErr = (window.__snapErr || 0) + 1; if (window.__snapErr < 4) console.warn('snapshot skipped', x && x.stack); } }
     // motion samples -> per-entity history (host clock), offset = lowest observed (arrival - host time)
     for (const { m, rt } of Ms) {
       M.offs.push(rt - m.ts); if (M.offs.length > 90) M.offs.shift(); M.off = Math.min(...M.offs);
@@ -403,10 +409,11 @@
   function shift(M, pp, dx, dy, dz) { pp.x += dx; pp.y += dy; pp.z = Math.max(0, pp.z + dz); for (const h of M.hist.values()) { h.x += dx; h.y += dy; h.z += dz; } }
 
   // ---------------- Game hooks (called from game.js) ----------------
-  class RemoteSource { constructor(R) { this.R = R; } poll(o) { const I = this.R.inp; o.mx += I.mx; o.my += I.my; for (const a in I.h) o.h[a] = true; for (const a in I.p) o.h[a] = true; I.p = {}; } }
+  class RemoteSource { constructor(R) { this.R = R; } poll(o) { const I = this.R.inp; if (now() - (this.R.inT || 0) > 600) { I.mx = I.my = 0; I.h = {}; } /* v5.3: no input for 0.6 s -> release held keys */ o.mx += I.mx; o.my += I.my; for (const a in I.h) o.h[a] = true; for (const a in I.p) o.h[a] = true; I.p = {}; } }
   N.gameBuild = (g) => {
     N.game = g; N.evBuf = []; N.last = null; N.mlast = null; N.tk = 0; N.hostG = null;
     if (N.mode === 'host') {
+      N.gate = { wait: true, ready: new Set(), t0: now(), g, end: 0 };
       for (const R of N.conns) { const k = N.gameSlot && N.gameSlot[R.slot]; if (k != null && g.inputs[k]) g.inputs[k] = new CO.Input.PlayerInput([new RemoteSource(R)]); }
       for (const L of N.lobby.players) if (L.bot && N.gameSlot && N.gameSlot[L.slot] != null) { const k = N.gameSlot[L.slot]; g.inputs[k] = CO.Input.forSlot(k, { bot: true, getSim: () => g.sim }); }
       if (N.gameSlot) for (const k in g.inputs) if (+k > 0 && !Object.values(N.gameSlot).includes(+k)) g.inputs[k] = CO.Input.forSlot(+k, { bot: true, getSim: () => g.sim });
@@ -414,11 +421,50 @@
       g.netClient = true; const k = N.mySlot | 0; g.mySlot = k; N.mirror = null; N.snapQ = N.snapQ || []; N.motQ = [];
       g.myIn = CO.params.bot ? CO.Input.forSlot(k, { bot: true, getSim: () => g.sim }) : CO.Input.forSlot(0, {});
       g.lastSent = ''; g.lastSentT = 0; g.inP = {};
+      N.send({ t: 'gready' }); g.time.delayedCall(1000, () => { if (!N.cdOn) N.send({ t: 'gready' }); });   // v5.3: loaded -> tell the host (resent once)
     }
   };
+  // v5.3 READY / SET / GO: the host holds the sim until every client has loaded the stage (or 6 s), then everyone counts down
+  // from the host's clock (the 'cd' message carries the time left, so late receivers shorten their count to match)
+  const CD = 2400;
+  N.gateOpen = g => {
+    const G = N.gate; if (!G || G.g !== g || !N.isHost() || !N.inPlay) return true;
+    const t = now();
+    if (G.wait) {
+      const need = N.conns.filter(R => R.ok && N.gameSlot && N.gameSlot[R.slot] != null).map(R => R.slot);
+      if (need.every(k => G.ready.has(k)) || t - G.t0 > 6000) { G.wait = false; G.end = t + CD; N.bcast({ t: 'cd', ms: CD }); N.cdShow(CD); N.stats.gateMs = Math.round(t - G.t0); }
+      return false;
+    }
+    if (t < G.end) return false;
+    N.gate = null; return true;
+  };
+  N.cdShow = ms => {
+    const g = N.game; if (!g || !g.add || !g.sys || !g.sys.isActive()) { N.cdOn = false; return; } N.cdOn = true; window.__cd = (window.__cd || 0) + 1;
+    if (N.cdTxt) try { N.cdTxt.destroy(); } catch (e) {}
+    const tx0 = N.cdTxt = g.add.text(640, 300, '', CO.style(96, '#ffd34d', { strokeThickness: 10 })).setOrigin(0.5).setScrollFactor(0).setDepth(99999);
+    const steps = [['READY…', '#ffd34d', 'tick'], ['SET…', '#ffb347', 'tick'], ['GO!', '#7dff8a', 'ready']], seg = CD / 3, t0 = now() - (CD - ms);
+    const show = () => {
+      if (!tx0.scene) return; const e = now() - t0, k = Math.min(2, Math.floor(e / seg));
+      if (tx0._k !== k) { tx0._k = k; tx0.setText(steps[k][0]).setColor(steps[k][1]).setScale(1.5).setAlpha(1); g.tweens.add({ targets: tx0, scale: 1, duration: 220, ease: 'Back.out' }); CO.audio.sfx(steps[k][2]); }
+      if (e < CD) g.time.delayedCall(50, show); else { g.tweens.add({ targets: tx0, alpha: 0, scale: 1.4, duration: 400, onComplete: () => { try { tx0.destroy(); } catch (x) {} } }); N.cdOn = false; }
+    };
+    show();
+  };
+  // v5.3: hidden host tab — Phaser's rAF loop stops, so a worker timer (not throttled like page timers) keeps the room's sim running
+  (() => {
+    let last = now();
+    const tick = () => { const t = now(), dt = t - last; last = t; try { const g = N.hostG || N.game; if (document.hidden && N.isHost() && N.inPlay && g && g.sim && g.hiddenStep && g.sys && g.sys.isActive()) g.hiddenStep(dt); } catch (e) { console.error(e); } };
+    try { const w = new Worker(URL.createObjectURL(new Blob(['setInterval(function(){postMessage(0)},33)'], { type: 'text/javascript' }))); w.onmessage = tick; }
+    catch (e) { setInterval(tick, 33); }
+  })();
+  // v5.3: client tab hidden / blurred -> send a neutral input at once (the host also times out after 0.6 s)
+  const idle = () => { if (N.isClient() && N.inPlay) N.send({ t: 'in', mx: 0, my: 0, h: [], p: [] }); };
+  document.addEventListener('visibilitychange', () => { if (document.hidden) idle(); });
+  window.addEventListener('blur', idle);
   N.clientUpdate = (g, delta) => {
-    const it = g.myIn.update();
-    if (it.p.pause) { g.scene.pause(); g.scene.launch('Pause', { net: true }); g.scene.bringToTop('Pause'); return; }
+    let it = g.myIn.update();
+    if (it.p.pause && !g.scene.isActive('Pause')) { g.scene.launch('Pause', { net: true }); g.scene.bringToTop('Pause'); }   // v5.3: overlay — the client view keeps running
+    if (g.scene.isActive('Pause')) it = { mx: 0, my: 0, h: {}, p: {} };
     N.clientApply(g); predict(g, it, delta);
     // input: coalesced, at most ~30 msgs/s (presses go out within one frame), latest state only — no backlog
     for (const a in it.p) if (it.p[a] && a !== 'pause') g.inP[a] = true;
@@ -427,7 +473,7 @@
     if ((p.length && gap >= 15) || (sig !== g.lastSent && gap >= 30) || gap > 250) {
       N.send({ t: 'in', mx: rnd(it.mx), my: rnd(it.my), h, p, q: N.mirror ? N.mirror.cs || 0 : 0 }); g.lastSent = sig; g.lastSentT = t; g.inP = {}; N.stats.ins++;
     }
-    g._dt = delta; g.render(delta / 1000);
+    g._dt = delta; try { g.render(delta / 1000); } catch (e) { window.__renderErr = (window.__renderErr || 0) + 1; if (window.__renderErr < 4) console.warn('render skipped', e); }   // v5.3: one bad frame never freezes a client
   };
 
   // in-game names / toasts

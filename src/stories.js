@@ -2,7 +2,7 @@
 // without one falls back to CO.STORIES.lemon (the main STARSHIFT thread). To add a new character's story later,
 // just add CO.STORIES.<charId> = {...} with the same shape — no scene code changes needed.
 (function (CO) {
-  const st = k => 'st_' + k;
+  const st = k => 'st_' + k, s53 = k => 'st53_' + k;   // v5.3: Keith / Weisheng stills redrawn as full anime illustrations
   CO.STORIES = {
     lemon: {
       title: 'STARSHIFT', goal: 'STARSHIFT', deadline: 20 * 60, clockOff: 0, pron: 'SHE',
@@ -16,14 +16,14 @@
     },
     weisheng: {
       exit7: 'HOME', scenes: {
-        lobby: { img: 'bg_s3', panels: [{ t: 'The CEO seals the front doors.', s: '"Exit sealed. …Roof, then. Detour noted."' }, { t: 'Plan B: the lift. Up to the roof.', s: '"Lift\'s the fastest thing in this building. Including me."' }] },
-        roof: { img: 'bg_s5', panels: [{ t: 'Take-off!', s: '"Shortest distance between two points: a straight line. Down."' }, { t: 'CRASH.', s: '"It\'s going down. Not the way I planned."' }, { t: 'A quiet apartment block.', s: '"Sorry about the wall. I\'ll send a cheque."', img: 'bg_s6' }] } },
+        lobby: { img: 'st53_ws_lobby', panels: [{ fx: 'shake', t: 'The CEO seals the front doors.', s: '"Exit sealed. …Roof, then. Detour noted."' }, { t: 'Plan B: the lift. Up to the roof.', s: '"Lift\'s the fastest thing in this building. Including me."' }] },
+        roof: { img: 'st53_ws_heli', panels: [{ fx: 'whoosh', t: 'Take-off!', s: '"Shortest distance between two points: a straight line. Down."' }, { fx: 'crash', t: 'CRASH.', s: '"It\'s going down. Not the way I planned."' }, { t: 'A quiet apartment block.', s: '"Sorry about the wall. I\'ll send a cheque."', img: 'st53_ws_crash', fx: 'dust' }] } },
       title: 'HOME BY 7:30', goal: 'DINNER', deadline: 19 * 60 + 30, clockOff: -30, pron: 'HE',
       intro: [
-        { t: '5:58 PM. Friday.', s: 'Daughter: "Papa, dinner at 7:30! Mama made curry. You promised!!"  —  "Promised. Leaving at six. Not a minute later."', img: st('ws_i1') },
-        { t: 'The car park camera.', s: 'Car boxed in. Shutter jammed. A zombie guard asleep on the button.  "Garage blocked. Fine. Taking the long way."', img: st('ws_i2') },
-        { t: 'Tie straightened. Watch checked.', s: 'The whole floor shambles out of the cubicles.  "Ninety minutes. Zero wasted."', img: st('ws_i3') },
-        { t: 'CLOCK OUT!  —  HOME BY 7:30', s: 'Weisheng. Car-pool guy. Family man. On schedule.', img: st('ws_t') },
+        { t: '5:58 PM. Friday.', s: 'Daughter: "Papa, dinner at 7:30! Mama made curry. You promised!!"  —  "Promised. Leaving at six. Not a minute later."', img: s53('ws_i1'), fx: 'ping' },
+        { t: 'The car park camera.', s: 'Car boxed in. Shutter jammed. A zombie guard asleep on the button.  "Garage blocked. Fine. Taking the long way."', img: s53('ws_i2') },
+        { t: 'Tie straightened. Watch checked.', s: 'The whole floor shambles out of the cubicles.  "Ninety minutes. Zero wasted."', img: s53('ws_i3') },
+        { t: 'CLOCK OUT!  —  HOME BY 7:30', s: 'Weisheng. Car-pool guy. Family man. On schedule.', img: s53('ws_t'), fx: 'flash' },
       ],
       stages: {
         s1: { sub: 'OPEN-PLAN TRAFFIC JAM', start: '"Stairwell\'s on the far side. Efficient route: through them."', clear: '"One floor. Eighty-one minutes."', text: 'Papa where r u' },
@@ -36,8 +36,9 @@
       },
       boss: { hrdirector: 'Policy says I leave at six. Read your own handbook.', printerboss: 'PC LOAD LETTER. Not my department.', ceo_lobby: 'With respect: no.', muzak: 'Elevator music. My kid\'s recorder recital was better.', micromanager: 'You want a status update? Leaving.', landlord: 'I\'m not a tenant. I\'m a shortcut.', ceo: 'My overtime ends at 7:30. Sharp.' },
       ending: [
-        { t: '7:29 PM. Home.', s: 'Daughter: "You made it!"   Weisheng: "Told you. Not a minute late."', img: st('ws_e2') },
-        { t: 'HOME. 7:30 PM. On time.', s: 'Curry. Rice. The crayon drawing on the fridge. Worth every floor.', img: st('ws_e3') },
+        { t: '7:29 PM. The front door.', s: 'Hallway light spills out. Suit torn. Tie still perfect.', img: s53('ws_e1') },
+        { t: '7:29 PM. Home.', s: 'Daughter: "You made it!"   Weisheng: "Told you. Not a minute late."', img: s53('ws_e2') },
+        { t: 'HOME. 7:30 PM. On time.', s: 'Curry. Rice. The crayon drawing on the fridge. Worth every floor.', img: s53('ws_e3') },
       ],
       endHead: ['HE MADE IT... DINNER\'S A BIT COLD.', 'CLOCKED OUT. HOME FOR DINNER.'],
       endSub: (hm, late, spare) => 'Home at ' + hm + ' — ' + (late ? 'dinner\'s cold, but the hug is warm.' : spare + ' to spare. Curry, rice, family.'),
@@ -46,14 +47,14 @@
     },
     keith: {
       exit7: 'GAME NIGHT', scenes: {
-        lobby: { img: 'bg_s3', panels: [{ t: 'The CEO seals the front doors.', s: '"Door\'s locked. Guess we take the long route, like a side quest."' }, { t: 'Plan B: the lift. Up to the roof.', s: '"Elevator = loading screen. Fight during the loading screen."' }] },
-        roof: { img: 'bg_s5', panels: [{ t: 'Take-off!', s: '"A helicopter?? Bro, this is a cutscene."' }, { t: 'CRASH.', s: '"Okay that crash was NOT in the trailer."' }, { t: 'A quiet apartment block.', s: '"Sorry auntie! Wrong game night!"', img: 'bg_s6' }] } },
+        lobby: { img: 'st53_kt_lobby', panels: [{ fx: 'shake', t: 'The CEO seals the front doors.', s: '"Door\'s locked. Guess we take the long route, like a side quest."' }, { t: 'Plan B: the lift. Up to the roof.', s: '"Elevator = loading screen. Fight during the loading screen."' }] },
+        roof: { img: 'st53_kt_heli', panels: [{ fx: 'whoosh', t: 'Take-off!', s: '"A helicopter?? Bro, this is a cutscene."' }, { fx: 'crash', t: 'CRASH.', s: '"Okay that crash was NOT in the trailer."' }, { t: 'A quiet apartment block.', s: '"Sorry auntie! Wrong game night!"', img: 'st53_kt_crash', fx: 'dust' }] } },
       title: 'GAME NIGHT, BRO', goal: 'GAME NIGHT', deadline: 20 * 60, clockOff: 0, pron: 'HE',
       intro: [
-        { t: '5:58 PM. The AV booth.', s: 'Group chat BROS: "8PM game night!!"  "new banner drops tonight"  "KEITH U BRINGING THE SNACKS"  "limited event bro dont be late"', img: st('kt_i1') },
-        { t: 'Lights out. Something shambles on the projector.', s: '"Bro. Not tonight."', img: st('kt_i2') },
-        { t: 'Snacks: secured. Laser pointer: ready.', s: '"Relax, bro. Two hours. Easy."', img: st('kt_i3') },
-        { t: 'CLOCK OUT!  —  GAME NIGHT, BRO', s: 'Keith. After-hours AV tech. The kitties have his back.', img: st('kt_i2') },
+        { t: '5:58 PM. The AV booth.', s: 'Group chat BROS: "8PM game night!!"  "new banner drops tonight"  "KEITH U BRINGING THE SNACKS"  "limited event bro dont be late"', img: s53('kt_i1'), fx: 'ping' },
+        { t: 'Lights out. Something shambles on the projector.', s: '"Bro. Not tonight."', img: s53('kt_i2'), fx: 'shake' },
+        { t: 'Snacks: secured. Laser pointer: ready.', s: '"Relax, bro. Two hours. Easy."', img: s53('kt_i3') },
+        { t: 'CLOCK OUT!  —  GAME NIGHT, BRO', s: 'Keith. After-hours AV tech. The kitties have his back.', img: s53('kt_t'), fx: 'flash' },
       ],
       stages: {
         s1: { sub: 'LAG SPIKE', start: '"Relax, bro. It\'s just the tutorial level."', clear: '"Floor cleared. Achievement unlocked."', text: 'keith eta??' },
@@ -66,9 +67,9 @@
       },
       boss: { hrdirector: 'Is this a mandatory fun session? Pass, bro.', printerboss: 'Bro needs a firmware update.', ceo_lobby: 'Raid boss. Unkillable phase. Classic.', muzak: 'Your playlist is mid, bro.', micromanager: 'Relax, bro. You\'re micro-managing my build.', landlord: 'I\'m not paying rent. I\'m passing through.', ceo: 'Final boss. Kitties, it\'s showtime.' },
       ending: [
-        { t: '8:00 PM. "KEIIIITH!"', s: 'The bros jump off the sofa. He brought the snacks.', img: st('kt_e1') },
-        { t: 'NEW BANNER!', s: '"Relax, bros. I brought the luck."', img: st('kt_e2') },
-        { t: 'SSR!!!', s: 'GAME NIGHT. 8:00 PM. Logged in.', img: st('kt_e3') },
+        { t: '8:00 PM. "KEIIIITH!"', s: 'The bros jump off the sofa. He brought the snacks.', img: s53('kt_e1') },
+        { t: 'NEW BANNER!', s: '"Relax, bros. I brought the luck."', img: s53('kt_e2') },
+        { t: 'SSR!!!', s: 'GAME NIGHT. 8:00 PM. Logged in.', img: s53('kt_e3'), fx: 'flash' },
       ],
       endHead: ['HE MADE IT... BANNER\'S HALF OVER.', 'CLOCKED OUT. GAME NIGHT, BRO.'],
       endSub: (hm, late, spare) => 'Logged in at ' + hm + ' — ' + (late ? 'the bros pulled without him. Still SSR vibes.' : spare + ' to spare. Snacks delivered.'),
@@ -109,8 +110,8 @@
     },
   };
   // whose story runs: solo = the picked fighter (if they have a story); co-op = Lemon's thread if she's in, else P1's
-  CO.storyLead = chars => { chars = chars || CO.sel.chars || ['lemon']; if (chars.length > 1 && chars.indexOf('lemon') >= 0) return 'lemon'; return CO.STORIES[chars[0]] ? chars[0] : 'lemon'; };
+  CO.storyLead = chars => { chars = chars || CO.sel.chars || ['lemon']; return CO.STORIES[chars[0]] ? chars[0] : 'lemon'; };   // v5.3: P1 / the online host always leads (co-op used to fall back to Lemon whenever she was in the party)
   CO.story = chars => CO.STORIES[CO.storyLead(chars)];
-  CO.storyExtras = chars => (chars || CO.sel.chars || []).filter(c => c !== CO.storyLead(chars) && CO.STORIES[c] && c !== 'lemon');
+  CO.storyExtras = chars => (chars || CO.sel.chars || []).filter(c => c !== CO.storyLead(chars) && CO.STORIES[c]);
   CO.storyIntro = chars => { const s = CO.story(chars); return s.intro || CO.STORY.intro; };
 })(window.CO);

@@ -62,6 +62,12 @@
       if (!this.ctx) return; const t = this.ctx.currentTime + 0.005, B = this.sBus, r = Math.random;
       switch (name) {
         case 'swing': this.noiz(B, t, 0.13, 0.25, 'bandpass', 900, { fEnd: 3500, q: 1.5 }); break;
+        // v5.3 intro: phone ping, vibrate buzz, glass crack and full shatter (all synthesized)
+        case 'iping': [1568, 2093].forEach((f, i) => this.tone(B, t + i * 0.09, f, 0.35, 'sine', 0.22)); this.tone(B, t, 3136, 0.12, 'triangle', 0.05); break;
+        case 'ibuzz': for (let i = 0; i < 6; i++) this.tone(B, t + i * 0.055, 92, 0.05, 'sawtooth', 0.16, { lp: 320 }); break;
+        case 'icrack': this.noiz(B, t, 0.09, 0.7, 'highpass', 2500); this.tone(B, t, 2400, 0.05, 'square', 0.12, { slide: 600 }); for (let i = 0; i < 5; i++) this.tone(B, t + 0.02 + r() * 0.12, 3000 + r() * 3500, 0.07, 'sine', 0.07); this.tone(B, t, 120, 0.12, 'sine', 0.3, { slide: 50 }); break;
+        case 'ishatter': this.noiz(B, t, 0.5, 0.8, 'highpass', 1800, { fEnd: 6000 }); this.noiz(B, t, 0.25, 0.6, 'lowpass', 900); this.tone(B, t, 90, 0.4, 'sine', 0.5, { slide: 35 });
+          for (let i = 0; i < 26; i++) this.tone(B, t + 0.03 + r() * 0.9, 2200 + r() * 5200, 0.06 + r() * 0.12, r() < 0.5 ? 'sine' : 'triangle', 0.05 + r() * 0.05); break;
         case 'spin': for (let i = 0; i < 3; i++) this.noiz(B, t + i * 0.1, 0.1, 0.2, 'bandpass', 800, { fEnd: 3000, q: 1.5 }); break;
         case 'heavy': this.noiz(B, t, 0.2, 0.3, 'bandpass', 500, { fEnd: 2000 }); break;
         case 'launch': this.noiz(B, t, 0.25, 0.3, 'bandpass', 400, { fEnd: 4000 }); this.tone(B, t, 300, 0.2, 'square', 0.06, { slide: 900 }); break;
@@ -159,6 +165,12 @@
       const mel = [7, null, 7, 9, null, 7, null, 4, 2, null, 4, null, 7, null, null, null]; const m2 = [9, null, 9, 11, null, 12, null, 11, 9, null, 7, null, 4, null, 2, null];
       const M = (Math.floor(s / 16) % 2 ? m2 : mel)[b]; if (s >= 32 && M !== null) a.tone(a.mBus, t, N(60 + M + 12), sd * 1.8, 'square', 0.06, { lp: 3500 });
     } },
+    // v5.3 phone intro score: low pulse + tense minor pad, builds to the throw (synthesized, ~84 BPM)
+    intro53: { bpm: 84, play(a, s, t, sd) { const ch = [[57, 60, 64], [53, 57, 60], [55, 58, 62], [52, 56, 59]][Math.floor(s / 16) % 4];
+      if (s % 16 === 0) ch.forEach(n => a.tone(a.mBus, t, N(n), sd * 15, 'sawtooth', 0.022, { lp: 900, a: 0.4 }));
+      if (s % 2 === 0) a.tone(a.mBus, t, N(ch[0] - 24), sd * 0.9, 'triangle', s % 8 === 0 ? 0.2 : 0.11, { lp: 500 });
+      if (s % 8 === 4) a.hat(t, 0.05); if (s >= 16 && s % 4 === 0) a.kick(t, 0.5);
+      if (s >= 24 && s % 2 === 1) a.tone(a.mBus, t, N(ch[(s >> 1) % 3] + 24), sd * 0.6, 'square', 0.03, { lp: 2400 }); } },
     // v4 phone-throw intro: tense office tick
     introtick: { bpm: 100, play(a, s, t, sd) { if (s % 4 === 0) a.tone(a.mBus, t, N(s % 16 === 0 ? 48 : 60), sd * 0.8, 'triangle', 0.1, { lp: 900 }); if (s % 8 === 4) a.hat(t, 0.06); if (s % 32 >= 24 && s % 2 === 0) a.tone(a.mBus, t, N(72 + (s % 4)), sd * 0.5, 'square', 0.03); } },
     over: { bpm: 80, once: true, len: 24, play(a, s, t, sd) { const m = { 0: 67, 4: 66, 8: 65, 12: 64 }; if (m[s] !== undefined) a.tone(a.mBus, t, N(m[s]), sd * (s === 12 ? 10 : 3.5), 'triangle', 0.12, { lp: 1500 }); if (s === 12) a.tone(a.mBus, t, N(40), sd * 10, 'sine', 0.2); } },
