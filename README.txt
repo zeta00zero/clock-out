@@ -1,4 +1,13 @@
-CLOCK OUT!  —  An Arcane Duel Chronicles Story   v5.2   (v5: Story / Survival / Settings menus, ONLINE co-op, 100-level Survival with Boss Rush, new fighter WEI YAO, per-character stories)
+CLOCK OUT!  —  An Arcane Duel Chronicles Story   v5.3   (v5: Story / Survival / Settings menus, ONLINE co-op, 100-level Survival with Boss Rush, new fighter WEI YAO, per-character stories)
+
+WHAT'S NEW IN v5.3
+  ONLINE    The story follows the HOST's fighter (intro, cutscenes and ending). The host picks any of the 7 stages; all stages and
+            cutscenes are unlocked. READY / SET / GO countdown before play. Each player gets their own HUD (your fighter big, teammates
+            small). Fixed: random freezes / pauses for joining players, players getting stuck (a watchdog now frees them), the host's
+            blank screen on START, and leftover online/co-op settings leaking into the next mode. Version tag clockout-v5.3.
+  LOCAL     Local co-op is now 2 players (P1 + P2) with a 2-player HUD. Online still allows up to 4.
+  STORY     Keith's and Weisheng's cutscenes are now fully illustrated with camera moves, effects, music and sound, like Lemon's and Wei Yao's.
+  START     Slower, bigger phone-smash intro (~9 s) with its own music, phone ping, buzz (vibrates on phones), glass crack and shatter.
 
 WHAT'S NEW IN v5.2
   ONLINE    Smoother co-op for joining players: the host now sends at a fixed ~30 Hz (motion on an unordered channel, events/state on a
@@ -26,8 +35,8 @@ HOW TO PLAY
   Unzip, then double-click index.html (Chrome, Edge, Firefox or Safari). No server or internet needed.
   On a phone, put the folder on any static host (for example GitHub Pages) and play in landscape.
 
-START   A 5.6 s phone-smash intro plays before the title (desk -> throw -> cracked screen -> ~90 glass shards fall away onto the live menu; ~40 on phones). Any key, tap or pad button skips it; the skip press never reaches the menu.
-        STORY, SURVIVAL and CO-OP open a CHARACTER SELECT: LEMON, WEISHENG, KEITH or WEI YAO (co-op: 2-4 players, each picks a different fighter).
+START   A ~9 s phone-smash intro plays before the title (desk -> throw -> cracked screen -> ~90 glass shards fall away onto the live menu; ~40 on phones). Any key, tap or pad button skips it; the skip press never reaches the menu.
+        STORY, SURVIVAL and CO-OP open a CHARACTER SELECT: LEMON, WEISHENG, KEITH or WEI YAO (local co-op: 2 players; online: 2-4; each picks a different fighter).
 
 KEYBOARD (defaults - every key can be changed: TITLE -> CONTROLS, or CONTROLS / KEY BINDING on the How to Play screen)
   P1: Move WASD   Light J / Z   Heavy K / X (hold to charge)   Jump Space / C   Dash L / Shift
