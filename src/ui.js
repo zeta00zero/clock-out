@@ -81,7 +81,7 @@
         b.t.setText(this.label(it) + (it.sub ? '  ' + it.sub : '')).setColor(it.disabled ? '#7d8597' : sel ? '#0d1022' : '#ffffff').setStroke(sel ? '#ffffff' : '#0d1022', sel ? 2 : 5);
       });
     }
-    fire() { const it = this.items[this.i]; if (!it || it.disabled) return; CO.audio.sfx('uiok'); it.cb && it.cb(); }
+    fire() { const it = this.items[this.i]; if (!it || it.disabled) return; const t = performance.now(); if (it.cb && t - (this.lastFire || 0) < 220) return; this.lastFire = t; CO.audio.sfx('uiok'); it.cb && it.cb(); }   // v5.4: debounce (keyboard + click in one frame = one action)
     update() {
       const I = CO.menuInput.update(), P = I.p; let mv = 0;
       if (P.up) mv = -1; if (P.down) mv = 1;
@@ -162,7 +162,7 @@
       if (d.netMsg) { const nm = this.add.text(640, 210, d.netMsg, CO.style(26, '#ffd34d', { backgroundColor: '#10162ecc', padding: { x: 18, y: 10 } })).setOrigin(0.5).setDepth(300); this.tweens.add({ targets: nm, alpha: 0, delay: 5000, duration: 600 }); }
       const B = CO.save.best();
       this.add.text(70, 704, (B.score ? 'SURVIVAL BEST: ' + B.score.toLocaleString() + ' pts · wave ' + B.wave + '   ·   ' : '') + (CO.isTouchDevice() ? 'Tap to choose.' : 'WASD/Arrows + Enter  ·  Gamepad OK'), CO.style(17, '#cfe8ff')).setOrigin(0, 0.5);
-      this.add.text(1265, 708, 'v5 · 7-stage Story + 100-level Survival · Lemon, Weisheng, Keith & Wei Yao · local + online co-op', CO.style(14, '#9aa7c7')).setOrigin(1, 1);
+      this.add.text(1265, 708, 'v5.4 · 7-stage Story + 100-level Survival · Lemon, Weisheng, Keith & Wei Yao · local + online co-op', CO.style(14, '#9aa7c7')).setOrigin(1, 1);
       if (d.quiet) {} else if (!d.seamless) this.cameras.main.fadeIn(d.fromIntro ? 180 : 400);
       else { const cam = this.cameras.main; cam.setZoom(1.05); this.tweens.add({ targets: cam, zoom: 1, duration: 1500, delay: 1000, ease: 'Cubic.out' }); }   // v4.2 intro #5: title + menu settle in
       this.events.on('resume', () => { CO.menuInput.update(); });
@@ -178,7 +178,7 @@
   class StageSelect extends Phaser.Scene {
     constructor() { super('StageSelect'); }
     create() {
-      const P = CO.save.progress(); this.P = P;
+      const P = CO.save.progress(); this.P = P; this.leaving = false;
       this.add.rectangle(640, 360, 1280, 720, 0x0b0f1e);
       this.prev = this.add.image(860, 330, 'bg_3f').setDisplaySize(720, 405);
       const fr = this.add.graphics(); fr.lineStyle(5, 0x6fd3ff); fr.strokeRect(500, 127, 720, 405);
@@ -197,7 +197,7 @@
       const bk = () => this.scene.start('Title', { page: 'story', quiet: true });
       items.push({ label: 'BACK', size: 20, cb: bk });
       this.menu = new Menu(this, 250, 150, items, { w: 340, h: 40, gap: 6, onBack: bk });
-      this.menu.i = Math.min(P.unlocked, CO.STORY_ORDER.length) - 1; this.menu.draw();
+      this.menu.i = Math.max(0, Math.min(P.unlocked, CO.STORY_ORDER.length) - 1); this.menu.draw(); this.fresh = new CO.Fresh(this, 200);
       this.shown = -1; CO.audio.play('title'); this.cameras.main.fadeIn(250);
       window.__stageSelect = true;
     }
@@ -206,9 +206,9 @@
       this.hd.setText(SY.title + ' — STAGE SELECT'); this.hd2.setText('3F → 2F → Lobby → The Lift → Rooftop → The Apartment → The Streets.   ' + (SY.hudGoal ? SY.hudGoal.replace(/ · $/, '') + ' PM.' : SY.goal + ' at ' + dh + '.'));
       window.__ssHead = SY.title;
     }
-    start(id) { CO.audio.sfx('bell'); this.cameras.main.fadeOut(250); this.time.delayedCall(270, () => CO.startStage(this, id)); }
+    start(id) { if (this.leaving) return; this.leaving = true; CO.audio.sfx('bell'); this.cameras.main.fadeOut(250); this.time.delayedCall(270, () => CO.startStage(this, id)); }   // v5.4: one start only
     update() {
-      this.menu.update(); if (this.hk !== CO.sel.chars.join()) this.head();
+      if (!this.leaving) { const I = CO.menuInput.intent; this.fresh.poll(I && I.h ? I : { h: {} }); if (this.fresh.ok) this.menu.update(); else CO.menuInput.update(); } if (this.hk !== CO.sel.chars.join()) this.head();
       const i = this.menu.i; if (i === this.shown) return; this.shown = i;
       const id = CO.STORY_ORDER[i]; if (!id) return;
       const S = CO.STAGES[id], locked = i >= this.P.unlocked;
@@ -340,10 +340,12 @@
         { label: 'LEAVE ONLINE GAME', cb: () => { this.scene.stop(); this.scene.get('Game').quit(); } },
       ] : [
         { label: 'RESUME', cb: resume },
+      ].concat(onl || (() => { const g = this.scene.get('Game'); return !g || g.ended || !g.sim || g.sim.state === 'clear' || g.sim.state === 'won'; })() ? [] : [   // v5.4: no RESTART STAGE online or at the end of a stage
         { label: 'RESTART STAGE', cb: () => { this.scene.stop(); const g = this.scene.get('Game'); g.restart(Object.assign({}, g.data0, { checkpoint: null, continues: 0, stats: null })); } },
+      ]).concat([
         { label: 'SETTINGS', cb: () => { this.scene.pause(); this.scene.launch('Settings', { from: 'Pause' }); } },
         { label: 'QUIT TO TITLE', cb: () => { this.scene.stop(); this.scene.get('Game').quit(); } },
-      ], { w: 420, align: 'center', onBack: resume });
+      ]), { w: 420, align: 'center', onBack: resume });
       if (onl) this.add.text(640, 520, 'Online: the game keeps running for everyone while you are here.', CO.style(18, '#9aa7c7')).setOrigin(0.5);
       const tc = CO.touchOn();
       this.add.text(640, 600, tc ? 'Touch: left stick to move · ATK / HVY / JUMP / DASH · skill icons · CLOCK OUT when the gold bar is full'
@@ -392,7 +394,7 @@
   class Result extends Phaser.Scene {
     constructor() { super('Result'); }
     create(r) {
-      this.r = r; CO.audio.play('win');
+      this.r = r; this.leaving = false; this.menu = null; CO.audio.play('win');
       const S = this.S = CO.STAGES[r.stage], last = this.last = r.stage === CO.STORY_ORDER[CO.STORY_ORDER.length - 1];
       const SE = CO.story(CO.curChars).ending, bg = this.add.image(640, 360, last ? (SE ? SE[SE.length - 1].img : 'bg_win') : S.bg).setDisplaySize(1280, 720);
       if (!last) { const sh = this.add.graphics(); sh.fillStyle(0x000000, 0.45); sh.fillRect(0, 0, 1280, 720); }
@@ -411,7 +413,7 @@
       this.time.delayedCall(r.quick ? 50 : 1800, () => this.review());
       CO.menuInput.update();
     }
-    next(id) { CO.startStage(this, id, { stats: null, pre: false }); }
+    next(id) { if (this.leaving) return; this.leaving = true; CO.startStage(this, id, { stats: null, pre: false }); }   // v5.4: exactly one transition
     spare(r) { const m = 20 * 60 - (r.clockH * 60 + r.clockM);   // deadline-relative, so it holds for every story (display offset cancels)
       return m >= 60 ? Math.floor(m / 60) + 'h ' + String(m % 60).padStart(2, '0') + 'm' : m + ' min'; }
     review() {
@@ -433,17 +435,20 @@
       this.time.delayedCall(r.quick ? 200 : 2000, () => {
         const items = [];
         const cl = CO.net && CO.net.isClient() && CO.net.inPlay;
-        if (cl) items.push({ label: 'WAITING FOR HOST…', disabled: true });
-        if (nxt) items.push({ label: 'NEXT: ' + CO.STAGES[nxt].name, disabled: cl, cb: () => this.next(nxt) });
-        if (CO.net && CO.net.isHost() && CO.net.inPlay) items.push({ label: 'BACK TO LOBBY', cb: () => { this.scene.start('StageSelect'); } });
-        else if (!cl) items.push({ label: 'STAGE SELECT', cb: () => { this.scene.start('StageSelect'); } });
-        items.push({ label: cl ? 'LEAVE ONLINE GAME' : 'BACK TO TITLE', cb: () => { this.scene.start('Title'); } });
-        this.menu = new Menu(this, 230, nxt ? 520 : 560, items, { w: 360 });
+        const go = f => () => { if (this.leaving) return; this.leaving = true; f(); };   // v5.4: one transition per screen
+        // v5.4: no restart here; SPACE / ENTER / A confirms the highlighted item, which is NEXT STAGE (client: a harmless WAITING item)
+        if (cl) items.push({ label: nxt ? 'WAITING FOR HOST — NEXT: ' + CO.STAGES[nxt].name : 'WAITING FOR HOST…', size: 22, cb: () => CO.audio.sfx('ui') });
+        else if (nxt) items.push({ label: 'NEXT STAGE: ' + CO.STAGES[nxt].name, cb: () => this.next(nxt) });
+        if (CO.net && CO.net.isHost() && CO.net.inPlay) items.push({ label: 'BACK TO LOBBY', cb: go(() => this.scene.start('StageSelect')) });
+        else if (!cl) items.push({ label: 'STAGE SELECT', cb: go(() => this.scene.start('StageSelect')) });
+        items.push({ label: cl ? 'LEAVE ONLINE GAME' : 'BACK TO TITLE', cb: go(() => this.scene.start('Title')) });
+        this.menu = new Menu(this, 230, nxt ? 520 : 560, items, { w: 360 }); this.menu.i = 0; this.menu.draw(); this.fresh = new CO.Fresh(this, 350);
+        window.__resultItems = items.map(it => typeof it.label === 'function' ? it.label() : it.label);
         window.__resultShown = r.stage;
         if (CO.params.chain && nxt) this.time.delayedCall(300, () => this.next(nxt));
       });
     }
-    update() { if (this.menu) this.menu.update(); }
+    update() { if (!this.menu || this.leaving) return; const I = CO.menuInput.intent; this.fresh.poll(I && I.h ? I : { h: {} }); if (this.fresh.ok) this.menu.update(); else CO.menuInput.update(); }   // v5.4: debounced (a held SPACE from the fight never skips the screen)
   }
 
   // ---------- v5 Survival level select: any level reached, or jump by checkpoints (every 10) ----------

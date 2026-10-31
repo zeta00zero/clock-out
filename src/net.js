@@ -7,7 +7,7 @@
 //  Classic script (no modules) so file:// keeps working; online simply reports "unavailable" without PeerJS / network.
 (function (CO) {
   const Q = (() => { try { return new URLSearchParams(location.search); } catch (e) { return new URLSearchParams(''); } })();
-  const CFG = { prefix: 'clockout-v5-', alpha: 'ABCDEFGHJKMNPQRSTUVWXYZ23456789', ver: 'clockout-v5.3', hz: 30, keyEvery: 15, delay: 100, extra: 100, snapErr: 160, pingMs: 2000, lostMs: 12000, joinMs: 15000, max: 4 };
+  const CFG = { prefix: 'clockout-v5-', alpha: 'ABCDEFGHJKMNPQRSTUVWXYZ23456789', ver: 'clockout-v5.4', hz: 30, keyEvery: 45, delay: 100, gateMs: 3000, extra: 100, snapErr: 160, pingMs: 2000, lostMs: 12000, joinMs: 15000, max: 4 };
   const FLOW = new Set(['clear', 'failed', 'survArena', 'survwin']);           // never replayed on clients (the host drives scene changes)
   const SYNC = new Set(['Game', 'Cutscene', 'Intro', 'Result', 'GameOver']);    // host scene changes mirrored on every client
   const OUT = new Set(['Title', 'StageSelect', 'SurvSelect', 'CharSelect', 'HowTo']);   // host leaving play -> everyone back to the lobby
@@ -57,7 +57,7 @@
     N.session = false; N.mode = null; N.names = null; N.conns.forEach(c => { try { c.c.close(); } catch (e) {} }); N.conns = [];
     try { if (N.host) N.host.close(); } catch (e) {} N.host = null; try { if (N.uc) N.uc.close(); } catch (e) {} N.uc = null; N.motQ = []; N.hostG = null; try { if (N.peer) N.peer.destroy(); } catch (e) {} N.peer = null; N.code = null;
     N.lobby.players = []; N.me.ready = false; N.status = ''; clearTimeout(N.joinT); N.mirror = null;
-    N.inPlay = false; N.gameSlot = null; N.mySlot = 0; N.snapQ = []; N.evBuf = []; N.game = null; N.lobbyChars = null; N.gate = null; N.last = null; N.mlast = null;   // v5.3: no state leaks into solo play
+    N.inPlay = false; N.gameSlot = null; N.mySlot = 0; N.snapQ = []; N.evBuf = []; N.game = null; N.lobbyChars = null; N.gate = null; N.last = null; N.mlast = null; N.ep = 0; N.cdAt = 0; N.cdEp = -1; N.hold = false;   // v5.3: no state leaks into solo play
   };
   N.leave = (why) => { if (N.mode === 'client') N.send({ t: 'bye' }); if (N.mode === 'host') N.bcast({ t: 'bye', why: why || 'The host closed the room.' }); setTimeout(N.reset, 80); N.session = false; };
 
@@ -92,7 +92,7 @@
     const L = N.lobby.players.find(p => p.slot === R.slot);
     switch (m.t) {
       case 'in': { R.inT = now(); const I = R.inp; I.mx = m.mx || 0; I.my = m.my || 0; I.h = {}; (m.h || []).forEach(a => I.h[a] = true); (m.p || []).forEach(a => { if (a !== 'pause') I.p[a] = true; }); if (m.q != null) { R.q = m.q; R.qF = N.hostG && N.hostG.sim ? N.hostG.sim.frame : 0; } N.stats.ins++; break; }
-      case 'gready': if (N.gate && N.gate.wait) N.gate.ready.add(R.slot); break;   // v5.3: this client finished loading the stage
+      case 'gready': R.readyEp = m.ep; break;   // v5.4: remembered per stage epoch, so a 'loaded' that beats the host's own build is never lost   // v5.3: this client finished loading the stage
       case 'pong': R.rtt = Date.now() - m.ts; N.stats.rtt[R.slot] = R.rtt; break;
       case 'pick': if (L && !N.inPlay && N.charFree(m.char, L)) { L.char = m.char; L.ready = false; } N.pushLobby(); break;
       case 'ready': if (L) L.ready = !!m.v; N.pushLobby(); break;
@@ -160,17 +160,17 @@
       case 'lobby': N.lobby = { players: m.players, mode: m.mode, stage: m.stage, level: m.level }; N.lobbyRev = (N.lobbyRev || 0) + 1; { const me = m.players.find(p => p.slot === N.me.slot); if (me) { N.me.char = me.char; N.me.ready = me.ready; } } break;
       case 'ping': N.send({ t: 'pong', ts: m.ts }); break;
       case 'start': N.mySlot = m.gslot; N.names = m.names; N.inPlay = true; if (m.chars) { N.lobbyChars = m.chars.slice(); CO.curChars = m.chars.slice(); } break;
-      case 'cd': N.cdShow(m.ms); break;
+      case 'cd': if (m.ep != null && m.ep !== N.ep) break; { const rtt = N.stats.rtt[N.me.slot] || 0; N.cdEp = N.ep; N.cdAt = now() + Math.max(0, m.ms - rtt / 2); } N.cdShow(N.cdAt - now()); break;   // v5.4: start time on the local clock
       case 'goto': clientGoto(m); break;
       case 'cut': { const s = N.gm().getScene(m.key); if (s && s.sys.isActive() && s.panelTo) s.panelTo(m.i, m.auto); break; }
-      case 'snap': { const b = JSON.stringify(m).length; N.stats.rx += b; N.stats.snaps++; N.stats.snapBytes += b; (N.snapQ = N.snapQ || []).push(m); break; }
+      case 'snap': if (m.ep != null && m.ep !== N.ep) { N.stats.stale = (N.stats.stale || 0) + 1; break; } N.stats.snaps++; (N.snapQ = N.snapQ || []).push(m); break;   // v5.4: no per-snapshot JSON.stringify; stale-stage snapshots dropped
       case 's': motIn(m); break;
       case 'cutfx': { const s = N.gm().getScene(m.key); if (s && s.sys.isActive() && s.netFx) s.netFx(m); break; }
       case 'note': N.toast(m.msg); break;
       case 'bye': hostLost(m.why || 'The host left the room.'); break;
     }
   }
-  function motIn(m) { N.lastRx = now(); N.stats.rx += 30 + 12 * m.a.length; N.stats.mots = (N.stats.mots || 0) + 1; (N.motQ = N.motQ || []).push({ m, rt: now() }); if (N.motQ.length > 60) N.motQ.shift(); }
+  function motIn(m) { N.lastRx = now(); if (m.ep != null && m.ep !== N.ep) { N.stats.stale = (N.stats.stale || 0) + 1; return; } N.stats.rx += 30 + 12 * m.a.length; N.stats.mots = (N.stats.mots || 0) + 1; (N.motQ = N.motQ || []).push({ m, rt: now() }); if (N.motQ.length > 60) N.motQ.shift(); }
   // v5.2: second, UNORDERED data channel for the motion stream (PeerJS reliable:false -> ordered:false)
   function openU() {
     try { const u = N.peer.connect(CFG.prefix + N.code, { reliable: false, serialization: 'json', metadata: { u: 1, v: CFG.ver } }); N.uc = u; u.on('data', d => { if (d && d.t === 's') motIn(d); }); u.on('error', () => {}); } catch (e) {}
@@ -182,7 +182,7 @@
     try {
       if (m.key === 'Lobby') { N.inPlay = false; N.snapQ = []; stopAll(); sm.start('Lobby', { room: true }); }
       else if (m.launch) { ['Game', 'HUD', 'Ambient'].forEach(k => { if (sm.isActive(k)) sm.pause(k); }); sm.start(m.key, m.data); sm.bringToTop(m.key); }
-      else { N.snapQ = []; stopAll(); sm.start(m.key, m.data); }
+      else { if (m.ep != null) N.ep = m.ep; N.snapQ = []; N.motQ = []; N.mirror = null; N.hold = true; stopAll(); sm.start(m.key, m.data); }   // v5.4: new stage epoch -> nothing from the old stage survives
     } finally { N.applying = false; }
   }
   function hostLost(why) {
@@ -196,8 +196,8 @@
   SP.start = function (key, data) {
     if (N.session && N.inPlay && !N.applying) {
       if (N.mode === 'host') {
-        if (SYNC.has(key)) N.bcast({ t: 'goto', key, data: clean(data) });
-        else if (OUT.has(key)) { N.inPlay = false; N.bcast({ t: 'goto', key: 'Lobby' }); key = 'Lobby'; data = { room: true }; N.lobby.players.forEach(p => { if (!p.host) p.ready = false; }); N.lobby.players = N.lobby.players.filter(p => !p.bot); N.pushLobby(); }
+        if (SYNC.has(key)) { N.ep = (N.ep || 0) + 1; N.gate = null; N.bcast({ t: 'goto', key, data: clean(data), ep: N.ep }); }
+        else if (OUT.has(key)) { N.inPlay = false; N.ep = (N.ep || 0) + 1; N.gate = null; N.hostG = null; N.bcast({ t: 'goto', key: 'Lobby' }); key = 'Lobby'; data = { room: true }; /* v5.4: players who just played stay READY */ N.lobby.players = N.lobby.players.filter(p => !p.bot); N.pushLobby(); }
       } else if (N.mode === 'client') {
         if (SYNC.has(key)) return this;                         // the host decides what comes next
         if (OUT.has(key)) { N.leave(); data = Object.assign({ page: 'main', quiet: true }, key === 'Title' ? data : {}); key = 'Title'; }
@@ -206,7 +206,7 @@
     return oStart.call(this, key, data);
   };
   SP.launch = function (key, data) { if (N.isHost() && N.inPlay && key === 'GameOver' && !N.applying) N.bcast({ t: 'goto', key, data: clean(data), launch: true }); return oLaunch.call(this, key, data); };
-  SP.restart = function (data) { const k = this.key; if (N.isHost() && N.inPlay && k === 'Game' && !N.applying) N.bcast({ t: 'goto', key: 'Game', data: clean(data) }); if (N.isClient() && N.inPlay && k === 'Game' && !N.applying) return this; return oRestart.call(this, data); };
+  SP.restart = function (data) { const k = this.key; if (N.isHost() && N.inPlay && k === 'Game' && !N.applying) { N.ep = (N.ep || 0) + 1; N.gate = null; N.bcast({ t: 'goto', key: 'Game', data: clean(data), ep: N.ep }); } if (N.isClient() && N.inPlay && k === 'Game' && !N.applying) return this; return oRestart.call(this, data); };
 
   // ---------------- snapshot codec ----------------
   // v5.2 netcode: two streams, both sent from a FIXED 30 Hz host timer (not tied to the host's frame rate)
@@ -251,7 +251,7 @@
   };
   setInterval(() => { try { N.hostSend(); } catch (e) { console.error(e); } }, 1000 / CFG.hz);
   N.hostSend = () => {
-    const g = N.hostG; if (!N.isHost() || !N.conns.length || !g || !g.sim || !N.inPlay || now() - (N.liveT || 0) > 1500) return;
+    const g = N.hostG; if (!N.isHost() || !N.conns.length || !g || !g.sim || !N.inPlay || g.netEp !== N.ep || now() - (N.liveT || 0) > 1500) return;   // v5.4: only the current stage's sim is ever sent
     if (!REG) buildReg(); const t0 = now(), sim = g.sim; N.tk = (N.tk || 0) + 1;
     const ents = new Map(); for (const L of ENT) for (const e of sim[L]) ents.set(e, 1); if (sim.boss) ents.set(sim.boss, 1);
     // --- motion stream ---
@@ -265,7 +265,7 @@
       }
       const ts = Math.round(N.stepT || t0), body = JSON.stringify(arr).length + 40;
       for (const R of N.conns) if (R.ok) {
-        const m = { t: 's', f: sim.frame, ts, a: arr }; if (R.q != null) m.k = [R.q, sim.frame - R.qF];
+        const m = { t: 's', f: sim.frame, ts, a: arr, ep: N.ep }; if (R.q != null) m.k = [R.q, sim.frame - R.qF];
         const c = R.u && R.u.open ? R.u : R.c; if (c && c.open) { try { c.send(m); N.stats.tx += body; } catch (e) {} }
       }
       N.stats.mots = (N.stats.mots || 0) + 1; N.stats.motBytes = (N.stats.motBytes || 0) + body;
@@ -274,7 +274,7 @@
     const lch = !!N.last && ENT.some(L => N.last.lists[L] !== sim[L].map(e => e.id).join());   // a spawn/despawn must carry the new entity's full state
     const gen = N.tk % 2 === 0 || lch, ev = N.evBuf && N.evBuf.length;
     if (gen || ev) {
-      const snap = { t: 'snap', f: sim.frame, k: 0, e: {}, l: {}, b: sim.boss ? sim.boss.id : null, top: {} };
+      const snap = { t: 'snap', f: sim.frame, k: 0, e: {}, l: {}, b: sim.boss ? sim.boss.id : null, top: {}, ep: N.ep };
       if (gen) {
         const key = (N.snapN = (N.snapN || 0) + 1) % CFG.keyEvery === 1 || !N.last, last = key ? (N.last = { ents: new Map(), top: {}, lists: {} }) : N.last;
         snap.k = key ? 1 : 0; const seen = new Set();
@@ -339,6 +339,7 @@
     // motion samples -> per-entity history (host clock), offset = lowest observed (arrival - host time)
     for (const { m, rt } of Ms) {
       M.offs.push(rt - m.ts); if (M.offs.length > 90) M.offs.shift(); M.off = Math.min(...M.offs);
+      { const j = rt - m.ts - M.off; M.jit = M.jit == null ? j : M.jit * 0.95 + j * 0.05; }   // v5.4: arrival jitter above the fastest packet
       const seen = new Set();
       for (const a of m.a) {
         const id = a[0]; seen.add(id); let H = M.hs.get(id); if (!H) { H = []; M.hs.set(id, H); }
@@ -352,7 +353,8 @@
     }
     // render remote actors CFG.delay ms in the past: interpolate between the bracketing samples, extrapolate at most CFG.extra ms
     if (M.off !== null) {
-      const rt = t - M.off - CFG.delay;
+      const dly = M.dly = Phaser.Math.Clamp(50 + 2 * (M.jit || 0), 60, 200); N.stats.interpMs = Math.round(dly);   // v5.4: adaptive interpolation delay (was a fixed 100 ms)
+      const rt = t - M.off - dly;
       for (const [id, H] of M.hs) {
         if (id === me && M.pp && !M.adopt) continue; const o = M.store.get(id); if (!o || !H.length) continue;
         let i = H.length - 1; while (i > 0 && H[i].t > rt) i--;
@@ -411,9 +413,9 @@
   // ---------------- Game hooks (called from game.js) ----------------
   class RemoteSource { constructor(R) { this.R = R; } poll(o) { const I = this.R.inp; if (now() - (this.R.inT || 0) > 600) { I.mx = I.my = 0; I.h = {}; } /* v5.3: no input for 0.6 s -> release held keys */ o.mx += I.mx; o.my += I.my; for (const a in I.h) o.h[a] = true; for (const a in I.p) o.h[a] = true; I.p = {}; } }
   N.gameBuild = (g) => {
-    N.game = g; N.evBuf = []; N.last = null; N.mlast = null; N.tk = 0; N.hostG = null;
+    N.game = g; N.evBuf = []; N.last = null; N.mlast = null; N.tk = 0; N.hostG = null; g.netEp = N.ep; if (N.cdTxt) { try { N.cdTxt.destroy(); } catch (e) {} N.cdTxt = null; } N.cdOn = false;
     if (N.mode === 'host') {
-      N.gate = { wait: true, ready: new Set(), t0: now(), g, end: 0 };
+      N.gate = { wait: true, t0: now(), g, end: 0, ep: N.ep };
       for (const R of N.conns) { const k = N.gameSlot && N.gameSlot[R.slot]; if (k != null && g.inputs[k]) g.inputs[k] = new CO.Input.PlayerInput([new RemoteSource(R)]); }
       for (const L of N.lobby.players) if (L.bot && N.gameSlot && N.gameSlot[L.slot] != null) { const k = N.gameSlot[L.slot]; g.inputs[k] = CO.Input.forSlot(k, { bot: true, getSim: () => g.sim }); }
       if (N.gameSlot) for (const k in g.inputs) if (+k > 0 && !Object.values(N.gameSlot).includes(+k)) g.inputs[k] = CO.Input.forSlot(+k, { bot: true, getSim: () => g.sim });
@@ -421,7 +423,9 @@
       g.netClient = true; const k = N.mySlot | 0; g.mySlot = k; N.mirror = null; N.snapQ = N.snapQ || []; N.motQ = [];
       g.myIn = CO.params.bot ? CO.Input.forSlot(k, { bot: true, getSim: () => g.sim }) : CO.Input.forSlot(0, {});
       g.lastSent = ''; g.lastSentT = 0; g.inP = {};
-      N.send({ t: 'gready' }); g.time.delayedCall(1000, () => { if (!N.cdOn) N.send({ t: 'gready' }); });   // v5.3: loaded -> tell the host (resent once)
+      const ep = N.ep; N.hold = N.cdEp !== ep || N.cdAt > now(); N.send({ t: 'gready', ep });
+      g.time.addEvent({ delay: 300, repeat: 40, callback: () => { if (N.cdEp !== ep && N.ep === ep) N.send({ t: 'gready', ep }); } });   // v5.4: 'loaded' resent until the host's start arrives
+      if (N.cdEp === ep && N.cdAt > now()) g.time.delayedCall(0, () => N.cdShow(N.cdAt - now()));   // the start came before this build finished
     }
   };
   // v5.3 READY / SET / GO: the host holds the sim until every client has loaded the stage (or 6 s), then everyone counts down
@@ -431,22 +435,22 @@
     const G = N.gate; if (!G || G.g !== g || !N.isHost() || !N.inPlay) return true;
     const t = now();
     if (G.wait) {
-      const need = N.conns.filter(R => R.ok && N.gameSlot && N.gameSlot[R.slot] != null).map(R => R.slot);
-      if (need.every(k => G.ready.has(k)) || t - G.t0 > 6000) { G.wait = false; G.end = t + CD; N.bcast({ t: 'cd', ms: CD }); N.cdShow(CD); N.stats.gateMs = Math.round(t - G.t0); }
+      const rd = N.conns.filter(R => R.ok && N.gameSlot && N.gameSlot[R.slot] != null).every(R => R.readyEp === G.ep);
+      if (rd || t - G.t0 > CFG.gateMs) { G.wait = false; G.end = t + CD; N.bcast({ t: 'cd', ms: CD, ep: G.ep }); N.cdShow(CD); N.stats.gateMs = Math.round(t - G.t0); N.stats.gateTimeout = !rd; N.last = null; N.mlast = null; }   // v5.4: keyframe as the countdown starts
       return false;
     }
     if (t < G.end) return false;
     N.gate = null; return true;
   };
   N.cdShow = ms => {
-    const g = N.game; if (!g || !g.add || !g.sys || !g.sys.isActive()) { N.cdOn = false; return; } N.cdOn = true; window.__cd = (window.__cd || 0) + 1;
+    const g = N.game; if (ms <= 0) { N.hold = false; return; } if (!g || !g.add || !g.sys || !g.sys.isActive() || g.netEp !== N.ep) { N.cdOn = false; return; } N.cdOn = true; window.__cd = (window.__cd || 0) + 1;
     if (N.cdTxt) try { N.cdTxt.destroy(); } catch (e) {}
     const tx0 = N.cdTxt = g.add.text(640, 300, '', CO.style(96, '#ffd34d', { strokeThickness: 10 })).setOrigin(0.5).setScrollFactor(0).setDepth(99999);
     const steps = [['READY…', '#ffd34d', 'tick'], ['SET…', '#ffb347', 'tick'], ['GO!', '#7dff8a', 'ready']], seg = CD / 3, t0 = now() - (CD - ms);
     const show = () => {
       if (!tx0.scene) return; const e = now() - t0, k = Math.min(2, Math.floor(e / seg));
       if (tx0._k !== k) { tx0._k = k; tx0.setText(steps[k][0]).setColor(steps[k][1]).setScale(1.5).setAlpha(1); g.tweens.add({ targets: tx0, scale: 1, duration: 220, ease: 'Back.out' }); CO.audio.sfx(steps[k][2]); }
-      if (e < CD) g.time.delayedCall(50, show); else { g.tweens.add({ targets: tx0, alpha: 0, scale: 1.4, duration: 400, onComplete: () => { try { tx0.destroy(); } catch (x) {} } }); N.cdOn = false; }
+      if (e < CD) g.time.delayedCall(50, show); else { N.hold = false; g.tweens.add({ targets: tx0, alpha: 0, scale: 1.4, duration: 400, onComplete: () => { try { tx0.destroy(); } catch (x) {} } }); N.cdOn = false; }
     };
     show();
   };
@@ -462,7 +466,9 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden) idle(); });
   window.addEventListener('blur', idle);
   N.clientUpdate = (g, delta) => {
-    let it = g.myIn.update();
+    let it = g.myIn.update(); const fin = g.sim && (g.sim.state === 'clear' || g.sim.state === 'won');
+    if (N.hold && N.cdAt && now() >= N.cdAt && N.cdEp === N.ep) N.hold = false;
+    if (N.hold || fin) it = { mx: 0, my: 0, h: {}, p: {} };   // v5.4: no movement before GO / after the clear (no snap-back, no input bleed)
     if (it.p.pause && !g.scene.isActive('Pause')) { g.scene.launch('Pause', { net: true }); g.scene.bringToTop('Pause'); }   // v5.3: overlay — the client view keeps running
     if (g.scene.isActive('Pause')) it = { mx: 0, my: 0, h: {}, p: {} };
     N.clientApply(g); predict(g, it, delta);

@@ -42,12 +42,12 @@
     stepWhere(dd) {
       const L = N.lobby;
       if (L.mode === 'survival') { const mx = Math.max(1, CO.save.survLevel().max); L.level = Math.abs(dd) >= 10 ? (L.level >= mx ? 1 : Math.min(mx, L.level === 1 ? 10 : L.level + 10)) : Phaser.Math.Clamp(L.level + dd, 1, mx); }
-      else { const O = CO.STORY_ORDER, un = CO.STORY_ORDER.length;   /* v5.3: online, all 7 stages are open */ let i = O.indexOf(L.stage); i = Abs(dd) >= 10 ? (i + 1) % un : Phaser.Math.Clamp(i + dd, 0, un - 1); L.stage = O[i]; }
+      else { const O = CO.STORY_ORDER, un = CO.STORY_ORDER.length;   /* v5.3: online, all 7 stages are open */ let i = O.indexOf(L.stage); if (i < 0) i = 0; i = Abs(dd) >= 10 ? (i + 1) % un : (i + Math.sign(dd) + un) % un; L.stage = O[i]; }   /* v5.4: wraps both ways, never stuck at an end */
       N.pushLobby();
     }
     doHost() { this.stat.setText('Opening a room on the PeerJS server…'); N.hostRoom(ok => { if (!this.sys.isActive()) return; if (ok) this.build('room'); else { this.stat.setText(N.err); } }); }
     doJoin(code) { this.stat.setText('Connecting to room ' + N.cleanCode(code) + '…'); N.join(code, ok => { if (!this.sys.isActive()) return; if (ok) { this.build('room'); if (Q.has('autoready')) this.time.delayedCall(400, () => N.clientReady(true)); } else { this.stat.setText(N.err); this.build('home'); this.stat.setText(N.err); } }); }
-    doStart() { if (!N.allReady()) { CO.audio.sfx('nope'); this.stat.setText('Everyone has to be READY first.'); return; } this.leaving = true; this.cameras.main.fadeOut(200); this.time.delayedCall(220, () => N.start(this)); }
+    doStart() { if (!N.allReady()) { CO.audio.sfx('nope'); this.stat.setText('Everyone has to be READY first.'); return; } if (this.leaving) return; this.leaving = true; this.cameras.main.fadeOut(200); this.time.delayedCall(220, () => { if (!this.sys.isActive() || !N.start(this)) { this.leaving = false; this.cameras.main.resetFX(); this.cameras.main.fadeIn(150); } }); }   // v5.4: a failed start never locks the lobby
     copy() {
       const code = N.code, txt = 'Join my Clock Out! room: ' + code;
       try { if (navigator.share && CO.isTouchDevice()) navigator.share({ title: 'Clock Out!', text: txt }).catch(() => {}); else navigator.clipboard.writeText(code); this.stat.setText('Code ' + code + ' copied — friends pick ONLINE → JOIN WITH CODE.'); }
@@ -58,7 +58,7 @@
       this.killInput(); const c = this.game.canvas.getBoundingClientRect(), el = document.createElement('input');
       Object.assign(el, { type: 'text', value: val || '', maxLength: max, placeholder: ph, autocapitalize: 'characters', spellcheck: false });
       Object.assign(el.style, { position: 'fixed', left: (c.left + c.width * 0.08) + 'px', top: (c.top + c.height * 0.62) + 'px', width: (c.width * 0.36) + 'px', fontSize: Math.max(18, c.height * 0.05) + 'px', padding: '6px 10px', zIndex: 50, background: '#10162e', color: '#ffd34d', border: '3px solid #1fd1e8', borderRadius: '8px', fontFamily: 'monospace', letterSpacing: '4px' });
-      document.body.appendChild(el); el.focus(); this.inp = el; CO.keyboard && CO.keyboard.beginCapture && 0;
+      document.body.appendChild(el); el.focus(); this.inp = el; el.addEventListener('blur', () => setTimeout(() => { if (this.inp === el && document.activeElement !== el) this.killInput(); }, 150));   // v5.4: clicking away closes the box (it used to lock the menu) CO.keyboard && CO.keyboard.beginCapture && 0;
       el.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { const v = el.value; this.killInput(); done(v); } else if (e.key === 'Escape') this.killInput(); });
       const ok = this.add.text(c.width ? 50 + 470 : 520, 470, '[ OK ]', CO.style(26, '#7dff8a')).setInteractive({ useHandCursor: true }); this.okBtn = ok; ok.on('pointerdown', () => { const v = el.value; this.killInput(); done(v); });
     }

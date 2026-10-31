@@ -77,7 +77,8 @@
       let cp = data.checkpoint; if (cp === undefined && CO.params.boss && S.encounters) cp = S.encounters.length - 1;
       this.sim = new CO.Sim({ seed: CO.params.seed || ((Math.random() * 1e9) | 0), stage: stageId, mode: this.mode, checkpoint: cp, continues: data.continues || 0, stats: data.stats, god: CO.params.god, clock: Math.max(S.clock || 0, data.clock || 0), score: data.score, level: lv0 || 1 });
       // players: P1 = keyboard/pad/touch (or bot in tests); extra slots (debug ?players=N) = CPU bots
-      const chars = data.chars || (CO.params.chars && CO.params.chars.length ? CO.params.chars : null) || [CO.params.char || 'lemon'];
+      let chars = data.chars || (CO.params.chars && CO.params.chars.length ? CO.params.chars : null) || [CO.params.char || 'lemon'];
+      if (CO.net && CO.net.session && CO.net.inPlay && CO.net.lobbyChars && CO.net.lobbyChars.length > chars.length) chars = CO.net.lobbyChars.slice();   // v5.4: online, every stage keeps the whole room (NEXT used to rebuild with the host's solo pick only)
       const n = Phaser.Math.Clamp(Math.max(CO.params.players || 1, chars.length), 1, CO.net && CO.net.session ? CO.MAX_PLAYERS : 2); this.inputs = [];   /* v5.3: local co-op is 2 players; online up to 4 */ CO.activePlayers = n;
       for (let k = 0; k < n; k++) {
         this.sim.addPlayer(chars[k] || ['lemon', 'weisheng', 'keith'][k % 3], k);
@@ -176,7 +177,7 @@
       if (this.hostHidden) { this.hostHidden = false; this.acc = 0; try { this.game.loop.resetDelta(); } catch (e) {} }   // v5.3: the hidden-tab timer was stepping the sim; resume cleanly
       const online = CO.net && CO.net.isHost() && CO.net.inPlay;
       const intents = this.inputs.map(i => i.update());
-      if (intents.some(it => it.p.pause) && !this.ended) {
+      if (intents.some(it => it.p.pause) && !this.ended && this.sim.state !== 'clear' && this.sim.state !== 'won') {   // v5.4: no pause menu once the stage is cleared
         // v5.3: online the host's pause menu is an overlay — pausing the host sim froze the game for every player
         if (online) { if (!this.scene.isActive('Pause')) { this.scene.launch('Pause', { net: true }); this.scene.bringToTop('Pause'); } }
         else { this.scene.pause(); this.scene.pause('HUD'); this.scene.pause('Ambient'); this.scene.launch('Pause'); this.scene.bringToTop('Pause'); return; }

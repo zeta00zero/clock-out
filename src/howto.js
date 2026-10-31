@@ -10,7 +10,7 @@
   // Single door into gameplay. Opens How to Play first unless hidden / skipped.
   //   opts.back = scene key for BACK, opts.label = "next up" line, opts.noHowTo = continue-the-run transitions
   CO.enterGame = (scene, key, data, opts = {}) => {
-    if (key === 'Game' && data && !data.chars) data = Object.assign({ chars: CO.sel.chars.slice() }, data);   // v4: the fighter(s) picked on the select screen
+    if (key === 'Game' && data && !data.chars) data = Object.assign({ chars: (CO.net && CO.net.session && CO.net.inPlay && CO.net.lobbyChars ? CO.net.lobbyChars : CO.sel.chars).slice() }, data);   // v5.4: online = the whole room   // v4: the fighter(s) picked on the select screen
     if (opts.noHowTo || (CO.net && CO.net.active()) || CO.params.skip || CO.howto.hidden()) { scene.scene.start(key, data); return; }
     scene.scene.start('HowTo', { target: { key, data }, back: opts.back || 'Title', label: opts.label || '' });
   };
