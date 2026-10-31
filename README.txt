@@ -1,4 +1,16 @@
-CLOCK OUT!  —  An Arcane Duel Chronicles Story   v5.3   (v5: Story / Survival / Settings menus, ONLINE co-op, 100-level Survival with Boss Rush, new fighter WEI YAO, per-character stories)
+CLOCK OUT!  —  An Arcane Duel Chronicles Story   v5.4   (v5: Story / Survival / Settings menus, ONLINE co-op, 100-level Survival with Boss Rush, new fighter WEI YAO, per-character stories)
+
+WHAT'S NEW IN v5.4
+  ONLINE    Co-op fixes. Every stage now starts together: the host waits for every player to finish loading (at most 3 s), then all
+            screens begin READY / SET / GO at the same moment. This removes the long pause before a stage.
+            Players no longer disappear after stage 1-1 (NEXT STAGE keeps the whole online party).
+            Smoother for joining players: lighter updates, fewer full refreshes, and the smoothing delay now adapts to the connection.
+            Stage end -> next stage is one clean host-led step. Leftover data from the previous stage is ignored. No input is accepted
+            before GO. A double press can't trigger two transitions.
+            Map / stage select in the lobby wraps around and can't get stuck. A failed START unlocks the lobby again.
+            Version tag clockout-v5.4 (v5.3 rooms can't mix with v5.4).
+  RESULT    End-of-stage screen: RESTART STAGE removed. Space / Enter / A goes straight to NEXT STAGE (debounced, so one press = one step).
+            Online, joining players see "WAITING FOR HOST". The pause menu no longer offers RESTART online or after a stage is cleared.
 
 WHAT'S NEW IN v5.3
   ONLINE    The story follows the HOST's fighter (intro, cutscenes and ending). The host picks any of the 7 stages; all stages and
